@@ -17,9 +17,10 @@ Dataclasses that can be easily extended by future stories.
 ## Adapter (`brain.hippocampus.mem0_adapter`)
 
 Thin abstraction on top of the Mem0 SDK. It hides SDK specifics and provides a
-predictable interface for the rest of the codebase. If a real Mem0 client is not
-available, it falls back to a SQLite-backed persistent store (or an optional in-memory
-implementation) that powers development and tests.
+predictable interface for the rest of the codebase. The default deployment
+assumes Mem0 is self-hosted on the same LAN (or reachable via Tailscale); if the
+remote backend cannot be reached, the adapter automatically falls back to the
+local in-memory store (with an optional SQLite mode when persistence is needed).
 
 ## Models (`brain.hippocampus.models`)
 

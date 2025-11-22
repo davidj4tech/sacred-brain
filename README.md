@@ -9,7 +9,8 @@ simple HTTP endpoints for storing, querying, and summarising memories.
 - Query user memories using semantic/full-text lookups via Mem0.
 - Delete memories when they are no longer relevant.
 - Summarise multiple memories into a compact form.
-- Built-in SQLite persistence fallback when Mem0 is unavailable.
+- Designed for self-hosted Mem0 deployments on a private LAN/Tailscale network.
+- Automatically falls back to the local in-memory store (or optional SQLite mode) when Mem0 is unreachable.
 - Minimal configuration via TOML + environment variables.
 - Ready-to-run with `uvicorn`, includes tests and ops scaffolding.
 
@@ -23,18 +24,29 @@ export HIPPOCAMPUS_CONFIG=config/hippocampus.toml
 uvicorn brain.hippocampus.app:app --reload
 ```
 
-If you do not have a Mem0 API key yet, the service falls back to a
-SQLite-backed store so your development data survives process restarts.
+If Mem0 is offline (or not yet installed), the service automatically falls back
+to an in-memory store, ensuring Hippocampus keeps accepting requests. You can
+also opt into the bundled SQLite backend for persistence if desired.
 
 ## Configuration
 
 Configuration is loaded from `config/hippocampus.toml` and can be overridden
 with environment variables prefixed by `HIPPOCAMPUS_` (for example,
-`HIPPOCAMPUS_MEM0_API_KEY`). See `brain/hippocampus/config.py` for the full set
-of options. You can set `mem0.backend` to `cloud` when you have the official
-Mem0 SDK installed, or to `sqlite`/`inmemory` as needed. When using the
-SQLite fallback, customise `mem0.persistence_path` to control where the DB file
-is stored.
+`HIPPOCAMPUS_MEM0_BACKEND_URL`). See `brain/hippocampus/config.py` for the full
+set of options. The default expectation is that you self-host Mem0 on the same
+LAN/VPN:
+
+```toml
+[mem0]
+enabled = true
+backend = "remote"          # or "memory"/"sqlite"
+backend_url = "http://localhost:7700"
+api_key = ""                # optional, for your self-hosted deployment
+```
+
+If `enabled = false` (or the remote host fails), the adapter falls back to the
+in-memory store so Hippocampus remains responsive. The SQLite backend is still
+available for teams that want persistence without Mem0.
 
 ## Running Tests
 
