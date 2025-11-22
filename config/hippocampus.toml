@@ -1,0 +1,12 @@
+[app]
+host = "0.0.0.0"
+port = 8000
+log_level = "INFO"
+allow_origins = ["*"]
+
+[mem0]
+api_key = ""
+backend = "sqlite"  # set to "cloud" when providing a real key
+persistence_path = "data/hippocampus_memories.sqlite"
+summary_max_length = 480
+query_limit = 5
