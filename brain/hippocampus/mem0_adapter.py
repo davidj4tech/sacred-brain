@@ -25,10 +25,24 @@ class Mem0Adapter:
     default_query_limit: int = 5
     persistence_path: str | Path | None = None
     client: Any | None = None
+    plan: str | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         if self.client is None:
             self.client = self._build_client()
+        if self.plan is None:
+            self.plan = self._build_adapter_plan()
+
+    def _build_adapter_plan(self) -> str:
+        """Describe the Mem0Adapter integration strategy for future work."""
+        return (
+            "Mem0Adapter plan:\n"
+            "1. Detect backend preference (mem0 cloud, sqlite persistence, in-memory).\n"
+            "2. Provide a Mem0 SDK client wrapper when API key + package available.\n"
+            "3. Keep SQLite fallback as default, with in-memory option for tests.\n"
+            "4. Normalise outputs into MemoryRecord structures.\n"
+            "Next increment: integrate official Mem0 SDK calls alongside persistence fallback."
+        )
 
     def _build_client(self) -> Any:
         backend = (self.backend or "").lower()
@@ -283,4 +297,42 @@ def _maybe_float(value: Any) -> float | None:
         return None
 
 
-__all__ = ["Mem0Adapter", "InMemoryMem0Client", "SQLiteMem0Client"]
+@dataclass
+class Mem0RemoteClient:
+    """Wrapper around the optional mem0 SDK targeting a self-hosted endpoint."""
+
+    backend_url: str
+    api_key: str | None = None
+    summary_max_length: int = 480
+    default_query_limit: int = 5
+    _client: Any = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self._client = self._build_sdk_client()
+
+    def _build_sdk_client(self) -> Any:
+        module = import_module("mem0")
+        client_cls = getattr(module, "Mem0", None) or getattr(module, "Mem0Client", None)
+        if not client_cls:
+            raise ModuleNotFoundError("Mem0 SDK does not expose Mem0/Mem0Client")
+        kwargs = {"api_key": self.api_key} if self.api_key else {}
+        # Many SDKs expose a base_url argument for self-hosted deployments.
+        kwargs["base_url"] = self.backend_url
+        return client_cls(**kwargs)
+
+    def add_memory(self, user_id: str, text: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        return self._client.add_memory(user_id=user_id, text=text, metadata=metadata)
+
+    def query_memories(self, user_id: str, query: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        return self._client.query_memories(user_id=user_id, query=query, limit=limit or self.default_query_limit)
+
+    def delete_memory(self, memory_id: str) -> bool | Dict[str, Any]:
+        return self._client.delete_memory(memory_id=memory_id)
+
+    def summarize(self, texts: List[str], max_length: Optional[int] = None) -> str:
+        if hasattr(self._client, "summarize"):
+            return self._client.summarize(texts=texts, max_length=max_length or self.summary_max_length)
+        return _truncate(" ".join(texts), max_length or self.summary_max_length)
+
+
+__all__ = ["Mem0Adapter", "InMemoryMem0Client", "SQLiteMem0Client", "Mem0RemoteClient"]

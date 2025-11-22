@@ -18,8 +18,10 @@ class AppSettings:
 
 @dataclass
 class Mem0Settings:
+    enabled: bool = True
     api_key: str | None = None
     backend: str = "sqlite"
+    backend_url: str = "http://localhost:7700"
     summary_max_length: int = 480
     query_limit: int = 5
     persistence_path: str | None = None
@@ -80,8 +82,10 @@ def _load_mem0_settings(raw: object) -> Mem0Settings:
     if isinstance(api_key, str) and not api_key.strip():
         api_key = None
     return Mem0Settings(
+        enabled=bool(raw.get("enabled", True)),
         api_key=api_key,
         backend=str(raw.get("backend", "sqlite")),
+        backend_url=str(raw.get("backend_url", "http://localhost:7700")),
         summary_max_length=int(raw.get("summary_max_length", 480)),
         query_limit=int(raw.get("query_limit", 5)),
         persistence_path=str(raw.get("persistence_path")) if raw.get("persistence_path") else None,
@@ -94,8 +98,10 @@ def _apply_env_overrides(settings: HippocampusSettings) -> HippocampusSettings:
         "app.port": ("HIPPOCAMPUS_APP_PORT", int),
         "app.log_level": ("HIPPOCAMPUS_APP_LOG_LEVEL", str),
         "app.allow_origins": ("HIPPOCAMPUS_APP_ALLOW_ORIGINS", _csv_to_list),
+        "mem0.enabled": ("HIPPOCAMPUS_MEM0_ENABLED", _to_bool),
         "mem0.api_key": ("HIPPOCAMPUS_MEM0_API_KEY", _empty_to_none),
         "mem0.backend": ("HIPPOCAMPUS_MEM0_BACKEND", str),
+        "mem0.backend_url": ("HIPPOCAMPUS_MEM0_BACKEND_URL", str),
         "mem0.summary_max_length": ("HIPPOCAMPUS_SUMMARY_MAX_LENGTH", int),
         "mem0.query_limit": ("HIPPOCAMPUS_QUERY_LIMIT", int),
         "mem0.persistence_path": ("HIPPOCAMPUS_MEM0_PERSISTENCE_PATH", str),
@@ -127,6 +133,10 @@ def _csv_to_list(value: str) -> list[str]:
 def _empty_to_none(value: str) -> str | None:
     value = value.strip()
     return value or None
+
+
+def _to_bool(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 __all__ = ["AppSettings", "Mem0Settings", "HippocampusSettings", "load_settings"]

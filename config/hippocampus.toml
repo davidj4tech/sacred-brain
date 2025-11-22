@@ -5,8 +5,10 @@ log_level = "INFO"
 allow_origins = ["*"]
 
 [mem0]
+enabled = true
 api_key = ""
-backend = "sqlite"  # set to "cloud" when providing a real key
+backend = "sqlite"
+backend_url = "http://localhost:7700"
 persistence_path = "data/hippocampus_memories.sqlite"
 summary_max_length = 480
 query_limit = 5
