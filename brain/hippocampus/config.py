@@ -20,7 +20,7 @@ class AppSettings:
 class Mem0Settings:
     enabled: bool = True
     api_key: str | None = None
-    backend: str = "sqlite"
+    backend: str = "memory"
     backend_url: str = "http://localhost:7700"
     summary_max_length: int = 480
     query_limit: int = 5
@@ -84,7 +84,7 @@ def _load_mem0_settings(raw: object) -> Mem0Settings:
     return Mem0Settings(
         enabled=bool(raw.get("enabled", True)),
         api_key=api_key,
-        backend=str(raw.get("backend", "sqlite")),
+        backend=str(raw.get("backend", "memory")),
         backend_url=str(raw.get("backend_url", "http://localhost:7700")),
         summary_max_length=int(raw.get("summary_max_length", 480)),
         query_limit=int(raw.get("query_limit", 5)),

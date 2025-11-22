@@ -1,4 +1,8 @@
-from brain.hippocampus.mem0_adapter import InMemoryMem0Client, Mem0Adapter, SQLiteMem0Client
+from brain.hippocampus.mem0_adapter import (
+    InMemoryMem0Client,
+    Mem0Adapter,
+    SQLiteMem0Client,
+)
 from brain.hippocampus.models import ExperienceCreate
 
 
@@ -57,3 +61,78 @@ def test_sqlite_delete_prunes_persisted_memory(tmp_path):
     assert adapter.delete_memory(stored.id) is True
     assert adapter.query_memories("alice", "detail") == []
     client.close()
+
+
+class _StubRemoteClient:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+        self._stored_id = "remote-1"
+
+    def add_memory(self, user_id: str, text: str, metadata=None):
+        self.calls.append("add")
+        return {"id": self._stored_id, "user_id": user_id, "text": text, "metadata": metadata or {}}
+
+    def query_memories(self, user_id: str, query: str, limit: int = 5):
+        self.calls.append("query")
+        return [
+            {
+                "id": self._stored_id,
+                "user_id": user_id,
+                "text": f"{query} summary",
+                "metadata": {},
+                "score": 0.9,
+            }
+        ]
+
+    def delete_memory(self, memory_id: str):
+        self.calls.append("delete")
+        return {"deleted": memory_id == self._stored_id}
+
+    def summarize(self, texts, max_length=None):
+        self.calls.append("summarize")
+        return "remote summary"
+
+
+class _FailingRemoteClient:
+    def add_memory(self, *args, **kwargs):
+        raise RuntimeError("remote add failed")
+
+    def query_memories(self, *args, **kwargs):
+        raise RuntimeError("remote query failed")
+
+    def delete_memory(self, *args, **kwargs):
+        raise RuntimeError("remote delete failed")
+
+    def summarize(self, *args, **kwargs):
+        raise RuntimeError("remote summarize failed")
+
+
+def test_remote_client_success_path():
+    remote = _StubRemoteClient()
+    adapter = Mem0Adapter(client=remote)
+    exp = ExperienceCreate(user_id="alice", text="Remote memory")
+    record = adapter.add_experience(exp)
+
+    assert record.id == "remote-1"
+    assert remote.calls[0] == "add"
+
+    queried = adapter.query_memories("alice", "Remote")
+    assert queried[0].id == "remote-1"
+    assert adapter.fallback_client.query_memories("alice", "Remote") == []
+
+    assert adapter.delete_memory("remote-1") is True
+    assert adapter.summarize_texts(["one", "two"]) == "remote summary"
+
+
+def test_remote_client_failure_falls_back_to_memory():
+    remote = _FailingRemoteClient()
+    adapter = Mem0Adapter(client=remote)
+    exp = ExperienceCreate(user_id="alice", text="Fallback memory")
+    record = adapter.add_experience(exp)
+
+    fallback_results = adapter.query_memories("alice", "Fallback")
+    assert fallback_results[0].id == record.id
+
+    assert adapter.delete_memory(record.id) is True
+    summary = adapter.summarize_texts(["offline"])
+    assert summary.startswith("offline")

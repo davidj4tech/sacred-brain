@@ -7,7 +7,7 @@ allow_origins = ["*"]
 [mem0]
 enabled = true
 api_key = ""
-backend = "sqlite"
+backend = "memory"
 backend_url = "http://localhost:7700"
 persistence_path = "data/hippocampus_memories.sqlite"
 summary_max_length = 480

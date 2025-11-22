@@ -19,15 +19,19 @@ DEFAULT_PERSISTENCE_PATH = Path(__file__).resolve().parents[2] / "data" / "hippo
 
 @dataclass
 class Mem0Adapter:
+    enabled: bool = True
     api_key: str | None = None
-    backend: str = "sqlite"
+    backend: str = "memory"
+    backend_url: str = "http://localhost:7700"
     summary_max_length: int = 480
     default_query_limit: int = 5
     persistence_path: str | Path | None = None
     client: Any | None = None
+    fallback_client: Any = field(init=False, repr=False)
     plan: str | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
+        self.fallback_client = InMemoryMem0Client(max_summary_chars=self.summary_max_length)
         if self.client is None:
             self.client = self._build_client()
         if self.plan is None:
@@ -45,38 +49,47 @@ class Mem0Adapter:
         )
 
     def _build_client(self) -> Any:
-        backend = (self.backend or "").lower()
-        persistence_path = self._resolve_persistence_path()
+        backend = (self.backend or "memory").lower()
 
-        if backend in {"inmemory", "memory"}:
+        if backend in {"memory", "inmemory"} or not self.enabled:
             LOGGER.info("Using in-memory Mem0 backend")
-            return InMemoryMem0Client(max_summary_chars=self.summary_max_length)
+            return self.fallback_client
+
+        if backend in {"remote", "mem0"}:
+            return self._build_remote_client()
 
         if backend in {"sqlite", "persistent", "fallback"}:
+            persistence_path = self._resolve_persistence_path()
             LOGGER.info("Using SQLite persistence backend at %s", persistence_path)
             return self._build_sqlite_client(persistence_path)
 
-        if backend in {"cloud", "mem0", "remote"} and not self.api_key:
-            LOGGER.warning("Cloud backend requested but no API key provided; using SQLite fallback at %s", persistence_path)
-            return self._build_sqlite_client(persistence_path)
+        LOGGER.warning("Unknown backend %s; defaulting to in-memory", backend)
+        return self.fallback_client
 
-        if self.api_key:
-            try:
-                return self._build_mem0_client()
-            except ModuleNotFoundError as exc:
-                LOGGER.warning("mem0 package missing, falling back to SQLite backend: %s", exc)
-            except Exception as exc:  # pragma: no cover - defensive logging
-                LOGGER.warning("Failed to initialise mem0 client, falling back to SQLite backend: %s", exc, exc_info=True)
+    def _build_remote_client(self) -> Any:
+        if not self.enabled:
+            LOGGER.info("Mem0 remote backend disabled, using in-memory fallback")
+            return self.fallback_client
 
-        LOGGER.info("Mem0 backend not configured; using SQLite fallback at %s", persistence_path)
-        return self._build_sqlite_client(persistence_path)
-
-    def _build_mem0_client(self) -> Any:
-        module = import_module("mem0")
-        client_cls = getattr(module, "Mem0Client", None) or getattr(module, "Mem0", None)
-        if not client_cls:
-            raise ModuleNotFoundError("Mem0 client class missing")
-        return client_cls(api_key=self.api_key)
+        try:
+            LOGGER.info("Using remote Mem0 backend at %s", self.backend_url)
+            return Mem0RemoteClient(
+                backend_url=self.backend_url,
+                api_key=self.api_key,
+                summary_max_length=self.summary_max_length,
+                default_query_limit=self.default_query_limit,
+            )
+        except ModuleNotFoundError as exc:
+            LOGGER.warning(
+                "mem0 SDK not installed for remote backend; falling back to in-memory: %s", exc
+            )
+        except Exception as exc:  # pragma: no cover - defensive logging
+            LOGGER.warning(
+                "Failed to initialise remote Mem0 backend, falling back to in-memory: %s",
+                exc,
+                exc_info=True,
+            )
+        return self.fallback_client
 
     def _build_sqlite_client(self, persistence_path: Path) -> "SQLiteMem0Client":
         return SQLiteMem0Client(
@@ -93,7 +106,8 @@ class Mem0Adapter:
         return DEFAULT_PERSISTENCE_PATH
 
     def add_experience(self, experience: ExperienceCreate) -> MemoryRecord:
-        payload = self.client.add_memory(
+        payload = self._invoke_with_fallback(
+            "add_memory",
             user_id=experience.user_id,
             text=experience.text,
             metadata=experience.metadata,
@@ -101,7 +115,8 @@ class Mem0Adapter:
         return self._to_record(payload)
 
     def query_memories(self, user_id: str, query: str, limit: Optional[int] = None) -> List[MemoryRecord]:
-        result = self.client.query_memories(
+        result = self._invoke_with_fallback(
+            "query_memories",
             user_id=user_id,
             query=query,
             limit=limit or self.default_query_limit,
@@ -112,25 +127,42 @@ class Mem0Adapter:
         return records
 
     def delete_memory(self, memory_id: str) -> bool:
-        if hasattr(self.client, "delete_memory"):
-            result = self.client.delete_memory(memory_id=memory_id)
-            if isinstance(result, bool):
-                return result
-            if isinstance(result, dict):
-                return bool(result.get("deleted", True))
-        LOGGER.warning("Mem0 client does not support deletion; returning False")
+        result = self._invoke_with_fallback("delete_memory", memory_id=memory_id)
+        if isinstance(result, bool):
+            return result
+        if isinstance(result, dict):
+            return bool(result.get("deleted", True))
         return False
 
     def summarize_texts(self, texts: Iterable[str]) -> str:
         texts = list(texts)
         if not texts:
             return ""
-        if hasattr(self.client, "summarize"):
-            summary = self.client.summarize(texts=texts, max_length=self.summary_max_length)
-            if isinstance(summary, str):
-                return summary
-        # Fallback heuristic summary
+        summary = self._invoke_with_fallback("summarize", texts=texts, max_length=self.summary_max_length)
+        if isinstance(summary, str):
+            return summary
         return _truncate(" ".join(texts), self.summary_max_length)
+
+    def _invoke_with_fallback(self, method_name: str, *args: Any, **kwargs: Any) -> Any:
+        primary = getattr(self.client, method_name, None)
+        fallback = getattr(self.fallback_client, method_name, None)
+        if not callable(primary):
+            LOGGER.debug("Primary backend lacks %s; using fallback", method_name)
+            if callable(fallback):
+                return fallback(*args, **kwargs)
+            raise AttributeError(f"Fallback backend missing {method_name}")
+        try:
+            return primary(*args, **kwargs)
+        except Exception as exc:
+            LOGGER.warning(
+                "Primary backend failed for %s; falling back to in-memory: %s",
+                method_name,
+                exc,
+                exc_info=True,
+            )
+            if callable(fallback):
+                return fallback(*args, **kwargs)
+            raise
 
     def _to_record(self, raw: Dict[str, Any]) -> MemoryRecord:
         if not isinstance(raw, dict):

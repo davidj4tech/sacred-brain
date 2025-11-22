@@ -24,8 +24,10 @@ def create_app(settings: HippocampusSettings | None = None) -> FastAPI:
 
     application = FastAPI(title="Sacred Brain – Hippocampus", version="0.1.0")
     adapter = Mem0Adapter(
+        enabled=settings.mem0.enabled,
         api_key=settings.mem0.api_key,
         backend=settings.mem0.backend,
+        backend_url=settings.mem0.backend_url,
         summary_max_length=settings.mem0.summary_max_length,
         default_query_limit=settings.mem0.query_limit,
         persistence_path=settings.mem0.persistence_path,
