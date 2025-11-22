@@ -39,6 +39,10 @@ shared with other assistants (e.g., ChatGPT) for continuity.
 5. **Persistence fallback**
    - Added a SQLite-backed storage backend (with configurable path) that is now the default when Mem0 cloud access is unavailable.
    - Extended adapter tests to cover persistence, retrieval, and deletion flows to ensure offline durability.
+6. **Self-hosted Mem0 integration**
+   - Added configuration flags for `mem0.enabled` and `mem0.backend_url`, plus a `Mem0RemoteClient` wrapper for a LAN-accessible Mem0 deployment.
+   - `Mem0Adapter` now routes through the remote backend when enabled and automatically falls back to the in-memory store if the SDK/import fails or runtime calls error out.
+   - Expanded tests and docs to describe the self-hosted expectation, fallback strategy, and optional SQLite mode.
 
 ## Extra Feature Added During Session
 - Implemented memory deletion flow (`DELETE /memories/{memory_id}`) and updated
