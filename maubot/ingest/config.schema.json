@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "ingest_url": {
+      "type": "string",
+      "default": "http://127.0.0.1:54322/ingest",
+      "description": "Ingest endpoint URL"
+    },
+    "api_key": {
+      "type": "string",
+      "default": "",
+      "description": "Optional X-API-Key for Hippocampus"
+    },
+    "rooms_allowlist": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "List of room IDs to log (if set, only these rooms are logged)"
+    },
+    "react_success": {
+      "type": "boolean",
+      "default": false,
+      "description": "React ✅ to messages after successful ingest"
+    },
+    "log_level": {
+      "type": "string",
+      "default": "INFO",
+      "description": "Plugin log level"
+    },
+    "cache_ttl_seconds": {
+      "type": "integer",
+      "default": 300,
+      "description": "TTL for dedupe cache (seconds)"
+    },
+    "cache_max_size": {
+      "type": "integer",
+      "default": 1024,
+      "description": "Maximum dedupe cache entries"
+    }
+  },
+  "additionalProperties": false
+}

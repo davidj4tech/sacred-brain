@@ -1,14 +1,40 @@
 [app]
 host = "0.0.0.0"
-port = 8000
+port = 54321
 log_level = "INFO"
 allow_origins = ["*"]
 
+[auth]
+enabled = true
+header_name = "X-API-Key"
+api_keys = ["hippo_local_a58b583f7a844f0eb3bc02e58d56f5bd"]
+
+[summarizer]
+# Litellm-compatible provider (e.g., "ollama")
+enabled = false
+provider = "litellm"
+model = "ollama:llama3"
+base_url = "http://localhost:11434"
+api_key = ""
+max_tokens = 512
+
 [mem0]
 enabled = true
-api_key = ""
+api_key = "mem0_local_22b1c5c9f3a04ec3b5d4f8aa95dd1d72"
 backend = "memory"
-backend_url = "http://localhost:7700"
+backend_url = "http://localhost:8888"
 persistence_path = "data/hippocampus_memories.sqlite"
 summary_max_length = 480
 query_limit = 5
+
+[agno]
+enabled = false
+# Use an Agno model provider (e.g., openai:gpt-4o-mini, ollama:llama3).
+model = "openai:gpt-4o-mini"
+base_url = ""
+api_key = ""
+system_prompt = "You are the Sacred Brain hippocampus, managing memories concisely."
+
+[notes]
+notes_dir = "data/memories-denote"
+default_user = "default"

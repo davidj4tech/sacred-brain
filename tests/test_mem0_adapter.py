@@ -2,6 +2,7 @@ from brain.hippocampus.mem0_adapter import (
     InMemoryMem0Client,
     Mem0Adapter,
     SQLiteMem0Client,
+    Mem0RemoteClient,
 )
 from brain.hippocampus.models import ExperienceCreate
 
@@ -136,3 +137,48 @@ def test_remote_client_failure_falls_back_to_memory():
     assert adapter.delete_memory(record.id) is True
     summary = adapter.summarize_texts(["offline"])
     assert summary.startswith("offline")
+
+
+def test_mem0_remote_client_wraps_sdk(monkeypatch):
+    calls = {}
+
+    class _FakeMemoryClient:
+        def __init__(self, api_key=None, host=None):
+            calls["init"] = {"api_key": api_key, "host": host}
+
+        def add(self, messages, user_id, metadata=None):
+            calls["add"] = {"messages": messages, "user_id": user_id, "metadata": metadata}
+            return {"results": [{"id": "sdk-1", "memory": "Remember me", "user_id": user_id}]}
+
+        def search(self, query, user_id=None, top_k=None, limit=None):
+            calls["search"] = {"query": query, "user_id": user_id, "top_k": top_k, "limit": limit}
+            return {"results": [{"id": "sdk-1", "memory": "Remember me", "user_id": user_id, "score": 0.88}]}
+
+        def delete(self, memory_id):
+            calls["delete"] = {"memory_id": memory_id}
+            return {"message": "Memory deleted successfully"}
+
+    class _FakeModule:
+        MemoryClient = _FakeMemoryClient
+
+    def _fake_import(module_name):
+        if module_name == "mem0":
+            return _FakeModule()
+        raise ModuleNotFoundError(module_name)
+
+    monkeypatch.setattr("brain.hippocampus.mem0_adapter.import_module", _fake_import)
+
+    client = Mem0RemoteClient(api_key="secret", backend_url="https://api.mem0.ai")
+    record = client.add_memory(user_id="alice", text="Remember this", metadata={"topic": "test"})
+    assert record["text"] == "Remember me"
+
+    results = client.query_memories(user_id="alice", query="remember", limit=2)
+    assert results[0]["text"] == "Remember me"
+
+    deleted = client.delete_memory("sdk-1")
+    assert deleted == {"deleted": True}
+
+    assert calls["init"] == {"api_key": "secret", "host": "https://api.mem0.ai"}
+    assert calls["add"]["messages"][0]["content"] == "Remember this"
+    assert calls["search"]["top_k"] == 2
+    assert calls["delete"]["memory_id"] == "sdk-1"

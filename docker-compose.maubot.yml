@@ -1,0 +1,13 @@
+services:
+  maubot:
+    image: dock.mau.dev/maubot/maubot:v0.6.0
+    container_name: maubot
+    restart: unless-stopped
+    environment:
+      UID: "1002"   # host user id (sacred)
+      GID: "1002"   # host group id (sacred)
+      MAUBOT_EXTRA_PIP_PACKAGES: httpx
+    ports:
+      - "29316:29316"
+    volumes:
+      - ./maubot-data:/data
