@@ -138,6 +138,10 @@ not duplicate. See `docs/MEM0_ORG_ROAM.md` for the format and options.
 - Client-agnostic logging examples (curl/Python) are in `docs/LOGGING_TO_HIPPOCAMPUS.md`.
 - OpenWebUI-specific auto-logging is deprecated (legacy webhook remains for compatibility).
 
+## Memory Governor
+
+See `docs/MEMORY_GOVERNOR.md` for the Agno/Mem0-based decision layer in front of Hippocampus, including setup, systemd units, and smoke tests.
+
 ## Next Steps
 
 - Add authentication and per-caller access control.

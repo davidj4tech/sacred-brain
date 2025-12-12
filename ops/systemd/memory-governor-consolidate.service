@@ -1,0 +1,24 @@
+[Unit]
+Description=Memory Governor consolidation run
+After=memory-governor.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/memory-governor/memory-governor.env
+ExecStart=/bin/bash -lc '\
+  SCOPES="${MG_CONSOLIDATE_SCOPES}"; \
+  if [ -z "$SCOPES" ]; then \
+    echo "No MG_CONSOLIDATE_SCOPES set; skipping"; \
+    exit 0; \
+  fi; \
+  IFS=\",\" read -ra ITEMS <<< "$SCOPES"; \
+  for s in "${ITEMS[@]}"; do \
+    kind="${s%%:*}"; id="${s#*:}"; \
+    [ -z "$kind" ] && continue; \
+    curl -s -X POST -H \"Content-Type: application/json\" \
+      -d \"{\\\"scope\\\":{\\\"kind\\\":\\\"${kind}\\\",\\\"id\\\":\\\"${id}\\\"},\\\"mode\\\":\\\"all\\\"}\" \
+      http://127.0.0.1:54323/consolidate >/dev/null || true; \
+  done'
+
+[Install]
+WantedBy=multi-user.target

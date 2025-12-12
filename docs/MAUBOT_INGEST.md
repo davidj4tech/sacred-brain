@@ -44,3 +44,4 @@ Maubot version: tested against 0.4.2; manifest pins `maubot: 0.4.2`.
 - Uses async HTTP client with a 2s timeout; logs errors but never replies in
   room on failure.
 - Dedupe cache prevents repeated ingest of the same `event_id`.
+> Note: When Memory Governor is enabled, point the ingest plugin to `http://127.0.0.1:54323/observe` (instead of `/ingest`) so the governor decides what becomes durable. Legacy `/ingest` remains available.

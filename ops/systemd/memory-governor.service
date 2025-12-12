@@ -1,0 +1,17 @@
+[Unit]
+Description=Memory Governor (Agno + Mem0) service
+After=network-online.target litellm-compose.service hippocampus.service hippocampus-ingest.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=memory-governor
+Group=memory-governor
+WorkingDirectory=/opt/sacred-brain
+EnvironmentFile=/etc/memory-governor/memory-governor.env
+ExecStart=/opt/sacred-brain/.venv/bin/python -m memory_governor.app
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

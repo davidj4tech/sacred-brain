@@ -1,0 +1,69 @@
+from __future__ import annotations
+
+import logging
+from typing import Any, Dict, List, Optional
+
+import httpx
+
+LOGGER = logging.getLogger(__name__)
+
+
+class HippocampusClient:
+    def __init__(
+        self,
+        ingest_url: str,
+        hippocampus_url: str,
+        hippocampus_api_key: Optional[str] = None,
+        timeout: float = 5.0,
+    ) -> None:
+        self.ingest_url = ingest_url
+        self.hippo_url = hippocampus_url.rstrip("/")
+        self.hippo_key = hippocampus_api_key
+        self.timeout = timeout
+
+    def _headers(self) -> Dict[str, str]:
+        headers: Dict[str, str] = {}
+        if self.hippo_key:
+            headers["X-API-Key"] = self.hippo_key
+        return headers
+
+    async def post_memory(self, payload: Dict[str, Any]) -> Optional[str]:
+        """Prefer ingest; fall back to Hippocampus direct."""
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            try:
+                resp = await client.post(self.ingest_url, json=payload)
+                resp.raise_for_status()
+                data = resp.json()
+                return data.get("memory_id") or data.get("id")
+            except Exception as exc:
+                LOGGER.warning("Ingest write failed, falling back to Hippocampus: %s", exc)
+                try:
+                    resp = await client.post(
+                        f"{self.hippo_url}/memories", json=payload, headers=self._headers()
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                    return data.get("memory", {}).get("id") or data.get("id")
+                except Exception as final_exc:
+                    LOGGER.error("Hippocampus write failed: %s", final_exc)
+                    return None
+
+    async def query_memories(
+        self, user_id: str, query: str, limit: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        params: Dict[str, Any] = {"query": query}
+        if limit:
+            params["limit"] = limit
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            try:
+                resp = await client.get(
+                    f"{self.hippo_url}/memories/{user_id}",
+                    params=params,
+                    headers=self._headers(),
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                return data.get("memories", [])
+            except Exception as exc:
+                LOGGER.error("Hippocampus query failed: %s", exc)
+                return []
