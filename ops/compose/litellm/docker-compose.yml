@@ -1,0 +1,15 @@
+services:
+  litellm:
+    build: .
+    image: litellm-proxy:1.80.8
+    # To bump: update pip version in Dockerfile after verifying release notes.
+    container_name: litellm-proxy
+    restart: unless-stopped
+    network_mode: "bridge"
+    ports:
+      - "4000:4000"
+    env_file:
+      - /etc/litellm/litellm.env
+    volumes:
+      - /opt/sacred-brain/ops/litellm/config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000", "--host", "0.0.0.0"]

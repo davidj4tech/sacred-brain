@@ -1,0 +1,16 @@
+[Unit]
+Description=Hippocampus ingestion service (legacy name)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/sacred-brain
+Environment=HIPPOCAMPUS_URL=http://localhost:54321
+ExecStart=/opt/sacred-brain/.venv/bin/uvicorn ingest.hippocampus_ingest:app --host 0.0.0.0 --port 54322
+Restart=on-failure
+User=%i
+Group=%i
+
+[Install]
+WantedBy=multi-user.target

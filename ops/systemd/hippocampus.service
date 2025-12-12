@@ -1,0 +1,15 @@
+[Unit]
+Description=Sacred Brain Hippocampus Service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/sacred-brain
+Environment=HIPPOCAMPUS_CONFIG=/opt/sacred-brain/config/hippocampus.toml
+ExecStart=/opt/sacred-brain/.venv/bin/uvicorn brain.hippocampus.app:app --host 0.0.0.0 --port 54321
+Restart=on-failure
+User=sacred
+Group=sacred
+
+[Install]
+WantedBy=multi-user.target
