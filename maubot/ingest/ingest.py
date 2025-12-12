@@ -68,6 +68,26 @@ class IngestPlugin(Plugin):
         if await self.deduper.seen(evt.event_id):
             return
 
+        body = evt.content.body.strip()
+
+        # Command: !remember <text>
+        if body.startswith("!remember"):
+            remember_text = body[len("!remember") :].strip()
+            if remember_text:
+                await self._handle_remember(evt, remember_text)
+            else:
+                await evt.reply("Usage: !remember <text>")
+            return
+
+        # Command: !recall <query>
+        if body.startswith("!recall"):
+            query_text = body[len("!recall") :].strip()
+            if query_text:
+                await self._handle_recall(evt, query_text)
+            else:
+                await evt.reply("Usage: !recall <query>")
+            return
+
         payload = {
             "source": "matrix",
             "user_id": evt.sender,
@@ -91,6 +111,64 @@ class IngestPlugin(Plugin):
             self.log.warning("Ingest timed out for event %s", evt.event_id)
         except Exception as exc:  # pragma: no cover - defensive
             self.log.exception("Ingest error for event %s: %s", evt.event_id, exc)
+
+    async def _handle_remember(self, evt: MessageEvent, text: str) -> None:
+        payload = {
+            "source": "matrix",
+            "user_id": evt.sender,
+            "text": text,
+            "kind": "semantic",
+            "scope": {"kind": "room", "id": str(evt.room_id)},
+            "metadata": {"reason": "explicit", **_build_metadata(evt)},
+        }
+        try:
+            async with self.client_session.post(
+                f"{self.settings['governor_url'].rstrip('/')}/remember",
+                json=payload,
+            ) as resp:
+                if resp.status == 200:
+                    await evt.reply("Stored.")
+                else:
+                    self.log.warning("Remember failed (%s): %s", resp.status, await resp.text())
+                    await evt.reply("Failed to store.")
+        except asyncio.TimeoutError:
+            await evt.reply("Governor timeout.")
+        except Exception as exc:  # pragma: no cover - defensive
+            self.log.exception("Governor remember error: %s", exc)
+            await evt.reply("Error storing.")
+
+    async def _handle_recall(self, evt: MessageEvent, query: str) -> None:
+        payload = {
+            "user_id": evt.sender,
+            "query": query,
+            "k": self.settings["recall_top_k"],
+            "filters": {"kinds": ["semantic", "procedural"], "scope": {"kind": "room", "id": str(evt.room_id)}},
+        }
+        try:
+            async with self.client_session.post(
+                f"{self.settings['governor_url'].rstrip('/')}/recall",
+                json=payload,
+            ) as resp:
+                if resp.status != 200:
+                    self.log.warning("Recall failed (%s): %s", resp.status, await resp.text())
+                    await evt.reply("Recall failed.")
+                    return
+                data = await resp.json()
+                results = data.get("results", [])
+                if not results:
+                    await evt.reply("No memories found.")
+                    return
+                lines = []
+                for item in results[: self.settings["recall_top_k"]]:
+                    txt = item.get("text", "")
+                    kind = item.get("kind") or ""
+                    lines.append(f"- {txt} ({kind})" if kind else f"- {txt}")
+                await evt.reply("\n".join(lines))
+        except asyncio.TimeoutError:
+            await evt.reply("Governor timeout.")
+        except Exception as exc:  # pragma: no cover - defensive
+            self.log.exception("Governor recall error: %s", exc)
+            await evt.reply("Error recalling.")
 
 
 def _build_metadata(evt: MessageEvent) -> Dict[str, Any]:

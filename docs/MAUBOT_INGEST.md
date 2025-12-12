@@ -38,10 +38,15 @@ Upload the `.mbp` via Maubot admin UI, enable the plugin, and configure the
 values above. If Maubot needs extra deps, set `MAUBOT_EXTRA_PIP_PACKAGES=httpx`
 in the Maubot container (already done in our compose).
 
-Maubot version: tested against 0.4.2; manifest pins `maubot: 0.4.2`.
+Maubot version: tested against 0.6.0; manifest pins `maubot: 0.6.0`.
 
 ## Notes
 - Uses async HTTP client with a 2s timeout; logs errors but never replies in
   room on failure.
 - Dedupe cache prevents repeated ingest of the same `event_id`.
 > Note: When Memory Governor is enabled, point the ingest plugin to `http://127.0.0.1:54323/observe` (instead of `/ingest`) so the governor decides what becomes durable. Legacy `/ingest` remains available.
+
+### Commands (Memory Governor)
+- `!remember <text>`: forwards to Memory Governor `/remember` with scope set to the room.
+- `!recall <query>`: forwards to `/recall` (defaults to semantic/procedural, top 5) and replies with bullet results.
+- Configure `governor_url` (default `http://127.0.0.1:54323`) and `recall_top_k` in the plugin config.

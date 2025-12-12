@@ -17,6 +17,16 @@
       "items": { "type": "string" },
       "description": "List of room IDs to log (if set, only these rooms are logged)"
     },
+    "governor_url": {
+      "type": "string",
+      "default": "http://127.0.0.1:54323",
+      "description": "Memory Governor base URL for !remember/!recall commands"
+    },
+    "recall_top_k": {
+      "type": "integer",
+      "default": 5,
+      "description": "Max results returned in !recall"
+    },
     "react_success": {
       "type": "boolean",
       "default": false,
