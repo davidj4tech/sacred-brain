@@ -60,6 +60,17 @@ class NotesSettings:
 
 
 @dataclass
+class SamLLMSettings:
+    enabled: bool = True
+    base_url: str = "http://127.0.0.1:4000"
+    model: str = "gpt-4o-mini"
+    api_key: str | None = None
+    reflection_enabled: bool = True
+    memory_context_max: int = 3
+    memory_candidates_max: int = 8
+
+
+@dataclass
 class HippocampusSettings:
     app: AppSettings = field(default_factory=AppSettings)
     auth: AuthSettings = field(default_factory=AuthSettings)
@@ -67,6 +78,7 @@ class HippocampusSettings:
     mem0: Mem0Settings = field(default_factory=Mem0Settings)
     agno: AgnoSettings = field(default_factory=AgnoSettings)
     notes: NotesSettings = field(default_factory=NotesSettings)
+    sam: SamLLMSettings = field(default_factory=SamLLMSettings)
 
 
 def load_settings(config_path: str | Path | None = None) -> HippocampusSettings:
@@ -83,6 +95,7 @@ def load_settings(config_path: str | Path | None = None) -> HippocampusSettings:
     mem0_data = file_data.get("mem0", {}) if isinstance(file_data, dict) else {}
     agno_data = file_data.get("agno", {}) if isinstance(file_data, dict) else {}
     notes_data = file_data.get("notes", {}) if isinstance(file_data, dict) else {}
+    sam_data = file_data.get("sam", {}) if isinstance(file_data, dict) else {}
 
     settings = HippocampusSettings(
         app=_load_app_settings(app_data),
@@ -91,6 +104,7 @@ def load_settings(config_path: str | Path | None = None) -> HippocampusSettings:
         mem0=_load_mem0_settings(mem0_data),
         agno=_load_agno_settings(agno_data),
         notes=_load_notes_settings(notes_data),
+        sam=_load_sam_settings(sam_data),
     )
     return _apply_env_overrides(settings)
 
@@ -205,6 +219,20 @@ def _load_notes_settings(raw: object) -> NotesSettings:
     )
 
 
+def _load_sam_settings(raw: object) -> SamLLMSettings:
+    if not isinstance(raw, dict):
+        return SamLLMSettings()
+    return SamLLMSettings(
+        enabled=bool(raw.get("enabled", True)),
+        base_url=str(raw.get("base_url", "http://127.0.0.1:4000")),
+        model=str(raw.get("model", "gpt-4o-mini")),
+        api_key=_empty_to_none(str(raw.get("api_key", "")).strip()) if raw.get("api_key", None) is not None else None,
+        reflection_enabled=bool(raw.get("reflection_enabled", True)),
+        memory_context_max=int(raw.get("memory_context_max", 3)),
+        memory_candidates_max=int(raw.get("memory_candidates_max", 8)),
+    )
+
+
 def _apply_env_overrides(settings: HippocampusSettings) -> HippocampusSettings:
     env_map: dict[str, tuple[str, callable]] = {
         "app.host": ("HIPPOCAMPUS_APP_HOST", str),
@@ -234,6 +262,13 @@ def _apply_env_overrides(settings: HippocampusSettings) -> HippocampusSettings:
         "agno.system_prompt": ("HIPPOCAMPUS_AGNO_SYSTEM_PROMPT", str),
         "notes.notes_dir": ("HIPPOCAMPUS_NOTES_DIR", str),
         "notes.default_user": ("HIPPOCAMPUS_NOTES_DEFAULT_USER", str),
+        "sam.enabled": ("SAM_LLM_ENABLED", _to_bool),
+        "sam.base_url": ("SAM_LLM_BASE_URL", str),
+        "sam.model": ("SAM_LLM_MODEL", str),
+        "sam.api_key": ("SAM_LLM_API_KEY", _empty_to_none),
+        "sam.reflection_enabled": ("SAM_REFLECTION_ENABLED", _to_bool),
+        "sam.memory_context_max": ("SAM_MEMORY_CONTEXT_MAX", int),
+        "sam.memory_candidates_max": ("SAM_MEMORY_CANDIDATES_MAX", int),
     }
 
     updated = settings
@@ -262,6 +297,8 @@ def _assign_path(settings: HippocampusSettings, path: str, value: object) -> Hip
         return replace(settings, agno=replace(settings.agno, **{attr: value}))
     if top == "notes":
         return replace(settings, notes=replace(settings.notes, **{attr: value}))
+    if top == "sam":
+        return replace(settings, sam=replace(settings.sam, **{attr: value}))
     return settings
 
 
@@ -283,6 +320,7 @@ __all__ = [
     "AuthSettings",
     "SummarizerSettings",
     "Mem0Settings",
+    "SamLLMSettings",
     "HippocampusSettings",
     "load_settings",
 ]
