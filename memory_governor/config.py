@@ -32,6 +32,9 @@ class GovernorConfig:
     log_assistant: bool = False
     mem0_env_prefix: str = "MEM0_"
     consolidate_scopes: List[str] = field(default_factory=list)
+    rerank_enabled: bool = False
+    rerank_model: str = "gpt-4o-mini"
+    rerank_max: int = 10
     state_dir: Path = field(
         default_factory=lambda: Path(
             os.environ.get(
@@ -69,6 +72,9 @@ def load_config() -> GovernorConfig:
         rooms_scope=os.environ.get("MG_ROOMS_SCOPE", "room"),
         log_assistant=_as_bool(os.environ.get("MG_LOG_ASSISTANT"), False),
         consolidate_scopes=_split_csv(os.environ.get("MG_CONSOLIDATE_SCOPES")),
+        rerank_enabled=_as_bool(os.environ.get("MG_RERANK_ENABLE"), False),
+        rerank_model=os.environ.get("MG_RERANK_MODEL", "gpt-4o-mini"),
+        rerank_max=int(os.environ.get("MG_RERANK_MAX", "10")),
     )
 
     cfg.state_dir.mkdir(parents=True, exist_ok=True)

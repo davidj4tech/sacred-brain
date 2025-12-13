@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Iterable, Union
 
 import httpx
 
@@ -15,17 +15,63 @@ class HippocampusClient:
         hippocampus_url: str,
         hippocampus_api_key: Optional[str] = None,
         timeout: float = 5.0,
+        rerank_enabled: bool = False,
+        rerank_model: str = "gpt-4o-mini",
+        rerank_max: int = 10,
+        litellm_base_url: Optional[str] = None,
+        litellm_api_key: Optional[str] = None,
     ) -> None:
         self.ingest_url = ingest_url
         self.hippo_url = hippocampus_url.rstrip("/")
         self.hippo_key = hippocampus_api_key
         self.timeout = timeout
+        self.rerank_enabled = rerank_enabled
+        self.rerank_model = rerank_model
+        self.rerank_max = rerank_max
+        self.litellm_base_url = litellm_base_url
+        self.litellm_api_key = litellm_api_key
 
     def _headers(self) -> Dict[str, str]:
         headers: Dict[str, str] = {}
         if self.hippo_key:
             headers["X-API-Key"] = self.hippo_key
         return headers
+
+    async def _rerank(self, query: str, candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        if not (self.rerank_enabled and self.litellm_base_url and self.rerank_model and candidates):
+            return candidates
+        import json as _json
+
+        prompt = (
+            "Reorder the following memories by relevance to the query. "
+            "Return JSON array of the memory objects, unchanged, just reordered.\n"
+            f"Query: {query}\n"
+            f"Memories: {_json.dumps(candidates[: self.rerank_max], ensure_ascii=False)}"
+        )
+        payload = {
+            "model": self.rerank_model,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        headers = {"Content-Type": "application/json"}
+        if self.litellm_api_key:
+            headers["Authorization"] = f"Bearer {self.litellm_api_key}"
+
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                resp = await client.post(
+                    f"{self.litellm_base_url}/v1/chat/completions",
+                    json=payload,
+                    headers=headers,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                content = data["choices"][0]["message"]["content"]
+                parsed = _json.loads(content)
+                if isinstance(parsed, list):
+                    return parsed
+        except Exception as exc:
+            LOGGER.warning("Rerank failed, using original order: %s", exc)
+        return candidates
 
     async def post_memory(self, payload: Dict[str, Any]) -> Optional[str]:
         """Prefer ingest; fall back to Hippocampus direct."""

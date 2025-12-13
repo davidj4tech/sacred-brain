@@ -45,6 +45,11 @@ class GovernorRuntime:
             ingest_url=cfg.ingest_url,
             hippocampus_url=cfg.hippocampus_url,
             hippocampus_api_key=cfg.hippocampus_api_key,
+            rerank_enabled=cfg.rerank_enabled,
+            rerank_model=cfg.rerank_model,
+            rerank_max=cfg.rerank_max,
+            litellm_base_url=cfg.litellm_base_url,
+            litellm_api_key=cfg.litellm_api_key,
         )
         self._queue_rt: Optional[asyncio.Queue] = None
         self._worker: Optional[asyncio.Task] = None
