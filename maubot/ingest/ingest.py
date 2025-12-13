@@ -186,8 +186,10 @@ def _build_metadata(evt: MessageEvent) -> Dict[str, Any]:
 def _load_settings(config_obj: Any) -> Dict[str, Any]:
     defaults = {
         "ingest_url": "http://127.0.0.1:54322/ingest",
+        "governor_url": "http://127.0.0.1:54323",
         "api_key": "",
         "rooms_allowlist": set(),
+        "recall_top_k": 5,
         "react_success": False,
         "log_level": "INFO",
         "cache_ttl_seconds": 300,
@@ -203,10 +205,10 @@ def _load_settings(config_obj: Any) -> Dict[str, Any]:
     # handle room list
     rooms = raw.get("rooms_allowlist") or []
     settings["rooms_allowlist"] = set(rooms)
-    for key in ("ingest_url", "api_key", "react_success", "log_level"):
+    for key in ("ingest_url", "governor_url", "api_key", "react_success", "log_level"):
         if key in raw:
             settings[key] = raw[key]
-    for key in ("cache_ttl_seconds", "cache_max_size"):
+    for key in ("cache_ttl_seconds", "cache_max_size", "recall_top_k"):
         if key in raw:
             try:
                 settings[key] = int(raw[key])
