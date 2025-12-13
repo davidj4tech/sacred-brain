@@ -73,7 +73,7 @@ class HippocampusClient:
                 try:
                     resp2 = await client.get(
                         f"{self.hippo_url}/memories/{user_id}",
-                        params={"limit": limit or 10},
+                        params={"limit": limit or 50},
                         headers=self._headers(),
                     )
                     resp2.raise_for_status()
