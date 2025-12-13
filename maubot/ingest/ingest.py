@@ -185,8 +185,9 @@ def _build_metadata(evt: MessageEvent) -> Dict[str, Any]:
 
 def _load_settings(config_obj: Any) -> Dict[str, Any]:
     defaults = {
-        "ingest_url": "http://127.0.0.1:54322/ingest",
-        "governor_url": "http://127.0.0.1:54323",
+        # From inside the maubot container, the host is reachable via the docker gateway.
+        "ingest_url": "http://172.23.0.1:54323/observe",
+        "governor_url": "http://172.23.0.1:54323",
         "api_key": "",
         "rooms_allowlist": set(),
         "recall_top_k": 5,

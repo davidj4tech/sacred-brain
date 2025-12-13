@@ -1,7 +1,7 @@
-ingest_url: "http://127.0.0.1:54322/ingest"
+ingest_url: "http://172.23.0.1:54323/observe"  # use host gateway from container
 api_key: ""
 rooms_allowlist: []
-governor_url: "http://127.0.0.1:54323"
+governor_url: "http://172.23.0.1:54323"
 recall_top_k: 5
 react_success: false
 log_level: INFO
