@@ -74,7 +74,7 @@ def reflection_pass(
 
     scored.sort(key=lambda x: x[0], reverse=True)
     best_score, best_mem = scored[0]
-    if best_score < 0.1:
+    if best_score < 0.05:
         return ""
 
     snippet = (best_mem.get("text") or best_mem.get("memory") or "").strip()
