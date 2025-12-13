@@ -87,9 +87,16 @@ class HippocampusClient:
         q = query.lower()
         matched: List[Dict[str, Any]] = []
         now = None
+        tokens = [tok for tok in q.split() if tok]
         for mem in results:
             text = (mem.get("text") or mem.get("memory") or "").lower()
-            if any(tok in text for tok in [q, *q.split()]):
+            if q in text:
+                matched.append(mem)
+                continue
+            if tokens and all(tok in text for tok in tokens):
+                matched.append(mem)
+                continue
+            if tokens and any(tok in text for tok in tokens):
                 matched.append(mem)
 
         if matched:
