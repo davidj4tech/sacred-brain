@@ -7,6 +7,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from memory_governor.mem_policy import canonicalize_memory
 from memory_governor.schemas import ObserveRequest, Scope
 
 
@@ -32,6 +33,7 @@ class WorkingStore:
                     source TEXT,
                     user_id TEXT,
                     text TEXT,
+                    normalized_text TEXT,
                     ts INTEGER,
                     scope_key TEXT,
                     scope_kind TEXT,
@@ -55,12 +57,23 @@ class WorkingStore:
                 """
             )
             conn.commit()
+            # Ensure normalized_text exists (SQLite add column is idempotent)
+            try:
+                conn.execute("ALTER TABLE working_events ADD COLUMN normalized_text TEXT")
+            except sqlite3.OperationalError:
+                pass
+
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_working_norm ON working_events(user_id, normalized_text, ts)"
+            )
 
     def add_working(self, event: ObserveRequest) -> bool:
         """Returns True if inserted, False if deduped."""
         scope_key = _scope_key(event.scope)
         metadata_json = json.dumps(event.metadata or {})
         ts = int(event.timestamp or time.time())
+        normalized = canonicalize_memory(event.text).lower()
+        dedupe_cutoff = ts - 24 * 3600
         with sqlite3.connect(self.db_path) as conn:
             if event.metadata.get("event_id"):
                 existing = conn.execute(
@@ -69,15 +82,27 @@ class WorkingStore:
                 ).fetchone()
                 if existing:
                     return False
+            # Dedupe on normalized text for same user within last 24h
+            existing_norm = conn.execute(
+                """
+                SELECT 1 FROM working_events
+                WHERE user_id=? AND normalized_text=? AND ts>=?
+                LIMIT 1
+                """,
+                (event.user_id, normalized, dedupe_cutoff),
+            ).fetchone()
+            if existing_norm:
+                return False
             conn.execute(
                 """
-                INSERT INTO working_events (source, user_id, text, ts, scope_key, scope_kind, scope_id, event_id, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO working_events (source, user_id, text, normalized_text, ts, scope_key, scope_kind, scope_id, event_id, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     event.source,
                     event.user_id,
                     event.text,
+                    normalized,
                     ts,
                     scope_key,
                     event.scope.kind,

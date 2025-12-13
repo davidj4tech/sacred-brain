@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 import re
 from typing import Any, Dict, List, Tuple
 
@@ -8,21 +7,44 @@ from memory_governor.schemas import ObserveRequest
 
 
 def _keyword_score(text: str) -> float:
-    keywords = ["remember", "note", "important", "prefer", "always", "never"]
-    hits = sum(1 for kw in keywords if kw in text.lower())
-    return min(1.0, 0.2 * hits)
+    text_l = text.lower()
+    keywords = [
+        "remember",
+        "note",
+        "important",
+        "prefer",
+        "always",
+        "never",
+        "please",
+        "do not",
+        "don't",
+        "todo",
+        "task",
+        "tomorrow",
+        "next week",
+    ]
+    hits = sum(1 for kw in keywords if kw in text_l)
+    return min(1.0, 0.15 * hits)
 
 
 def classify_observation(event: ObserveRequest) -> Tuple[float, str]:
     """Return salience and decision kind."""
-    base = 0.1 + min(0.5, len(event.text) / 5000.0)
-    base += _keyword_score(event.text)
-    if event.metadata.get("reason") == "explicit":
-        base = max(base, 0.7)
+    text = event.text.strip()
+    base = 0.1 + min(0.5, len(text) / 4000.0)
+    base += _keyword_score(text)
+
+    # Boost for explicit markers or commands
+    if text.lower().startswith(("!remember", "!recall")) or event.metadata.get("reason") == "explicit":
+        base = max(base, 0.75)
+
+    # Preferential/commitment phrases boost
+    if re.search(r"\b(always|never|prefer|i will|i'll|please remember)\b", text, re.IGNORECASE):
+        base = max(base, 0.6)
+
     salience = min(1.0, base)
-    if salience < 0.2:
+    if salience < 0.25:
         kind = "ignore"
-    elif salience < 0.5:
+    elif salience < 0.55:
         kind = "working"
     else:
         kind = "candidate"

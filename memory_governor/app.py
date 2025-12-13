@@ -200,7 +200,20 @@ async def recall(payload: RecallRequest) -> RecallResponse:
                 },
             }
         )
-    return RecallResponse(results=filtered[: payload.k])
+    # Simple rerank: combine confidence and recency
+    now = time.time()
+    def _score(item: Dict[str, Any]) -> float:
+        conf = item.get("confidence") or 0.5
+        ts_val = item.get("timestamp")
+        if ts_val:
+            age_days = max(0.0, (now - float(ts_val)) / 86400.0)
+            recency = max(0.0, 1.0 - age_days / 30.0)  # linear decay over ~30 days
+        else:
+            recency = 0.3
+        return conf * 0.7 + recency * 0.3
+
+    ranked = sorted(filtered, key=_score, reverse=True)
+    return RecallResponse(results=ranked[: payload.k])
 
 
 @app.post("/consolidate", response_model=ConsolidateResponse)
