@@ -1,0 +1,14 @@
+[Unit]
+Description=Import Org/Denote notes into Hippocampus memories
+After=hippocampus.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/sacred-brain
+Environment=PYTHONPATH=/opt/sacred-brain
+ExecStart=/opt/sacred-brain/.venv/bin/python scripts/mem0_org_sync.py import --dir data/memories-denote
+User=sacred
+Group=sacred
+
+[Install]
+WantedBy=multi-user.target
