@@ -137,7 +137,7 @@ async def observe(payload: ObserveRequest) -> ObserveResponse:
                 "source": payload.source,
                 "scope": payload.scope.dict(),
                 "kind": "episodic",
-                "salience": salience,
+                "salience": max(0.5, salience),
                 **(payload.metadata or {}),
             },
         }
