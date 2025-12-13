@@ -87,22 +87,22 @@ def consolidate_events(
                 }
             )
         if mode in ("all", "semantic"):
-            if any(tok in lower for tok in ["prefer", "always", "never", "like", "please remember"]):
+            if any(tok in lower for tok in ["prefer", "always", "never", "like", "please remember", "compose", "plugin"]):
                 semantic.append(
                     {
                         "text": canonicalize_memory(text),
                         "kind": "semantic",
-                        "confidence": 0.6,
+                        "confidence": 0.7 if any(tok in lower for tok in ["prefer", "always", "never"]) else 0.6,
                         "provenance": provenance,
                     }
                 )
         if mode in ("all", "procedural"):
-            if any(lower.startswith(tok) for tok in ("run", "use", "start", "stop", "runbook", "task", "todo")):
+            if any(lower.startswith(tok) for tok in ("run", "use", "start", "stop", "runbook", "task", "todo")) or "runbook" in lower or "restart" in lower:
                 procedural.append(
                     {
                         "text": canonicalize_memory(text),
                         "kind": "procedural",
-                        "confidence": 0.55,
+                        "confidence": 0.65 if "runbook" in lower else 0.55,
                         "provenance": provenance,
                     }
                 )
