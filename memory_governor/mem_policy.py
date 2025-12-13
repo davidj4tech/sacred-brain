@@ -35,16 +35,16 @@ def classify_observation(event: ObserveRequest) -> Tuple[float, str]:
 
     # Boost for explicit markers or commands
     if text.lower().startswith(("!remember", "!recall")) or event.metadata.get("reason") == "explicit":
-        base = max(base, 0.75)
+        base = max(base, 0.9)
 
     # Preferential/commitment phrases boost
     if re.search(r"\b(always|never|prefer|i will|i'll|please remember)\b", text, re.IGNORECASE):
         base = max(base, 0.6)
 
     salience = min(1.0, base)
-    if salience < 0.25:
+    if salience < 0.2:
         kind = "ignore"
-    elif salience < 0.55:
+    elif salience < 0.4:
         kind = "working"
     else:
         kind = "candidate"
