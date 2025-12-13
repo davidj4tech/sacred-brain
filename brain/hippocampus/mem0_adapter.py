@@ -279,12 +279,11 @@ class SQLiteMem0Client:
         return payload
 
     def query_memories(self, user_id: str, query: str, limit: int = 5) -> List[Dict[str, Any]]:
-        tokens = [tok for tok in re.findall(r"\\w+", query.lower()) if tok]
+        tokens = [tok for tok in re.findall(r"\w+", query.lower()) if tok]
         params: List[Any] = [user_id]
         where_clauses: List[str] = ["user_id = ?"]
 
         if tokens:
-            # AND all tokens in any order
             for tok in tokens:
                 where_clauses.append("LOWER(text) LIKE ?")
                 params.append(f"%{tok}%")
@@ -292,7 +291,14 @@ class SQLiteMem0Client:
             where_clauses.append("LOWER(text) LIKE ?")
             params.append(f"%{query.lower()}%")
 
-        sql = f\"\"\"\n                SELECT id, user_id, text, metadata, score\n                FROM memories\n                WHERE {' AND '.join(where_clauses)}\n                ORDER BY rowid DESC\n                LIMIT ?\n                \"\"\"\n+        params.append(limit)
+        sql = (
+            "SELECT id, user_id, text, metadata, score "
+            "FROM memories "
+            f"WHERE {' AND '.join(where_clauses)} "
+            "ORDER BY rowid DESC "
+            "LIMIT ?"
+        )
+        params.append(limit)
 
         with self._lock:
             rows = self._conn.execute(sql, params).fetchall()
