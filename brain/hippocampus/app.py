@@ -181,6 +181,16 @@ def create_app(settings: HippocampusSettings | None = None) -> FastAPI:
     return application
 
 
+@app.get("/doctor")
+async def doctor() -> dict:
+    from sacred_brain.doctor import check_litellm
+
+    litellm_status = check_litellm()
+    return {
+        "litellm": litellm_status,
+    }
+
+
 def get_adapter(request: Request) -> Mem0Adapter:
     adapter = getattr(request.app.state, "mem0_adapter", None)
     if not adapter:
