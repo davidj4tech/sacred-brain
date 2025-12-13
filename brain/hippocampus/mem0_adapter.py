@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import sqlite3
 import threading
 import uuid
@@ -278,19 +279,23 @@ class SQLiteMem0Client:
         return payload
 
     def query_memories(self, user_id: str, query: str, limit: int = 5) -> List[Dict[str, Any]]:
-        query_pattern = f"%{query.lower()}%"
+        tokens = [tok for tok in re.findall(r"\\w+", query.lower()) if tok]
+        params: List[Any] = [user_id]
+        where_clauses: List[str] = ["user_id = ?"]
+
+        if tokens:
+            # AND all tokens in any order
+            for tok in tokens:
+                where_clauses.append("LOWER(text) LIKE ?")
+                params.append(f"%{tok}%")
+        else:
+            where_clauses.append("LOWER(text) LIKE ?")
+            params.append(f"%{query.lower()}%")
+
+        sql = f\"\"\"\n                SELECT id, user_id, text, metadata, score\n                FROM memories\n                WHERE {' AND '.join(where_clauses)}\n                ORDER BY rowid DESC\n                LIMIT ?\n                \"\"\"\n+        params.append(limit)
+
         with self._lock:
-            rows = self._conn.execute(
-                """
-                SELECT id, user_id, text, metadata, score
-                FROM memories
-                WHERE user_id = ?
-                  AND LOWER(text) LIKE ?
-                ORDER BY rowid DESC
-                LIMIT ?
-                """,
-                (user_id, query_pattern, limit),
-            ).fetchall()
+            rows = self._conn.execute(sql, params).fetchall()
         return [self._row_to_payload(row) for row in rows]
 
     def summarize(self, texts: List[str], max_length: Optional[int] = None) -> str:
