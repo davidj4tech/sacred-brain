@@ -3,7 +3,11 @@ from __future__ import annotations
 import os
 from typing import Iterable, List
 
+import logging
+
 from sacred_brain.llm_client import LLMClient, MemoryItem, load_llm_client_from_env
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _build_memory_items(memories: Iterable[dict], max_items: int) -> List[MemoryItem]:
@@ -18,6 +22,7 @@ def _build_memory_items(memories: Iterable[dict], max_items: int) -> List[Memory
         summary = text
         if len(summary.split()) > 30:
             summary = " ".join(summary.split()[:30]) + "…"
+        # never include raw blobs beyond short summary
         items.append(MemoryItem(title=meta.get("title") or kind or "memory", summary=summary, last_seen=None))
         if len(items) >= max_items:
             break
@@ -30,6 +35,12 @@ def sam_generate_reply(user_msg: str, memories: Iterable[dict], system_prompt: s
     if not llm_client.enabled:
         return "LLM is not attached yet. I can show stored memories and threads."
     mem_items = _build_memory_items(memories, max_context)
+    LOGGER.info(
+        "sam_pipeline: using llm=%s base_url=%s mem_items=%s",
+        llm_client.model,
+        llm_client.base_url,
+        len(mem_items),
+    )
     reply = llm_client.generate_reply(
         user_msg=user_msg,
         memory_context=mem_items,
