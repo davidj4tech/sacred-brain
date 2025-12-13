@@ -13,6 +13,8 @@ from .agno_integration import build_agno_agent
 from .mem0_adapter import Mem0Adapter
 from .reflection import reflection_pass
 from .summarizers import SummarizerConfig, summarize_texts as summarize_via_llm
+from sacred_brain.sam_pipeline import sam_generate_reply
+from sacred_brain.prompts import sam_system
 from .models import (
     ExperienceCreate,
     HealthResponse,
@@ -140,7 +142,10 @@ def create_app(settings: HippocampusSettings | None = None) -> FastAPI:
         agno_agent = getattr(request.app.state, "agno_agent", None)
         texts = list(payload.context) + [f"{payload.sender}: {payload.body}"]
 
-        if settings.agno.enabled and agno_agent:
+        if settings.sam.enabled:
+            mems = adapter.query_memories(user_id=payload.sender, query=payload.body, limit=settings.sam.memory_candidates_max)
+            reply = sam_generate_reply(payload.body, mems, sam_system.SYSTEM_PROMPT)
+        elif settings.agno.enabled and agno_agent:
             prompt = _format_matrix_prompt(payload.sender, payload.body, payload.context)
             try:
                 run = agno_agent.run(prompt, user_id=payload.sender, session_id=payload.room_id)

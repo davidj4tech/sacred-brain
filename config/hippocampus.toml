@@ -38,3 +38,12 @@ system_prompt = "You are the Sacred Brain hippocampus, managing memories concise
 [notes]
 notes_dir = "data/memories-denote"
 default_user = "default"
+
+[sam]
+enabled = true
+base_url = "http://127.0.0.1:4000"
+model = "gpt-4o-mini"
+api_key = ""
+reflection_enabled = true
+memory_context_max = 3
+memory_candidates_max = 8
