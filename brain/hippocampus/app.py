@@ -11,6 +11,7 @@ from .config import AuthSettings, SummarizerSettings, HippocampusSettings, load_
 from .logging_config import configure_logging
 from .agno_integration import build_agno_agent
 from .mem0_adapter import Mem0Adapter
+from .reflection import reflection_pass
 from .summarizers import SummarizerConfig, summarize_texts as summarize_via_llm
 from .models import (
     ExperienceCreate,
@@ -160,6 +161,16 @@ def create_app(settings: HippocampusSettings | None = None) -> FastAPI:
             )
         if not reply:
             reply = "I need more context before I can help."
+
+        reflection = reflection_pass(
+            adapter=adapter,
+            user_id=payload.sender,
+            user_message=payload.body,
+            assistant_reply=reply,
+        )
+        if reflection:
+            reply = f"{reply}\n\n{reflection}"
+
         return MatrixRelayResponse(reply=reply)
 
     return application
