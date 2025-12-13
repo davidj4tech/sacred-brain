@@ -1,0 +1,9 @@
+[Unit]
+Description=Nightly export of Hippocampus memories to Org/Denote
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target

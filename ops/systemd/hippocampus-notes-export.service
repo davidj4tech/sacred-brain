@@ -1,0 +1,14 @@
+[Unit]
+Description=Export Hippocampus memories to Org/Denote
+After=hippocampus.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/sacred-brain
+ExecStart=/opt/sacred-brain/.venv/bin/python scripts/mem0_org_sync.py export --dir data/memories-denote
+Environment=PYTHONPATH=/opt/sacred-brain
+User=sacred
+Group=sacred
+
+[Install]
+WantedBy=multi-user.target
