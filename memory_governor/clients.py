@@ -68,12 +68,31 @@ class HippocampusClient:
                 LOGGER.error("Hippocampus query failed: %s", exc)
                 return []
 
-        # Fallback substring filter (case-insensitive)
+        # Fallback substring filter (case-insensitive) and simple recency weighting if timestamps present
         q = query.lower()
-        filtered = []
+        matched: List[Dict[str, Any]] = []
+        now = None
         for mem in results:
             text = (mem.get("text") or mem.get("memory") or "").lower()
             if q in text:
-                filtered.append(mem)
-        # If nothing matched substring, return originals
-        return filtered[:limit] if filtered else results[: (limit or len(results))]
+                matched.append(mem)
+
+        if matched:
+            def _score(mem: Dict[str, Any]) -> float:
+                meta = mem.get("metadata", {}) or {}
+                ts = meta.get("timestamp")
+                try:
+                    ts_val = float(ts)
+                    nonlocal now
+                    if now is None:
+                        import time as _t
+                        now = _t.time()
+                    age_days = max(0.0, (now - ts_val) / 86400.0)
+                    recency = max(0.0, 1.0 - age_days / 30.0)
+                except Exception:
+                    recency = 0.3
+                return recency
+            matched = sorted(matched, key=_score, reverse=True)
+            return matched[:limit] if limit else matched
+
+        return results[: (limit or len(results))]

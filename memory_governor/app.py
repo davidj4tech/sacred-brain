@@ -213,6 +213,7 @@ async def recall(payload: RecallRequest) -> RecallResponse:
         return conf * 0.7 + recency * 0.3
 
     ranked = sorted(filtered, key=_score, reverse=True)
+    # If nothing found, return empty (or could return working data in future)
     return RecallResponse(results=ranked[: payload.k])
 
 

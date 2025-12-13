@@ -75,6 +75,8 @@ def consolidate_events(
             "scope_kind": evt.get("scope_kind"),
             "timestamp": evt.get("timestamp"),
         }
+        lower = text.lower()
+
         if mode in ("all", "episodic"):
             episodic.append(
                 {
@@ -85,7 +87,7 @@ def consolidate_events(
                 }
             )
         if mode in ("all", "semantic"):
-            if any(tok in text.lower() for tok in ["prefer", "always", "never", "like"]):
+            if any(tok in lower for tok in ["prefer", "always", "never", "like", "please remember"]):
                 semantic.append(
                     {
                         "text": canonicalize_memory(text),
@@ -95,7 +97,7 @@ def consolidate_events(
                     }
                 )
         if mode in ("all", "procedural"):
-            if any(text.strip().startswith(tok) for tok in ("run", "use", "start", "stop")):
+            if any(lower.startswith(tok) for tok in ("run", "use", "start", "stop", "runbook", "task", "todo")):
                 procedural.append(
                     {
                         "text": canonicalize_memory(text),
