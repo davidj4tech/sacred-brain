@@ -28,6 +28,13 @@ LOGGER = logging.getLogger("memory_governor")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
 
+def _keywords_from_text(text: str, min_len: int = 4) -> list[str]:
+    import re
+
+    tokens = re.findall(r"\w+", text.lower())
+    return sorted({t for t in tokens if len(t) >= min_len})
+
+
 class GovernorRuntime:
     def __init__(self, cfg: GovernorConfig) -> None:
         self.cfg = cfg
@@ -130,6 +137,7 @@ async def observe(payload: ObserveRequest) -> ObserveResponse:
     salience, decision_kind = classify_observation(payload)
 
     if decision_kind == "candidate":
+        keywords = _keywords_from_text(payload.text)
         memory_payload = {
             "user_id": payload.user_id,
             "text": payload.text,
@@ -138,6 +146,7 @@ async def observe(payload: ObserveRequest) -> ObserveResponse:
                 "scope": payload.scope.dict(),
                 "kind": "episodic",
                 "salience": max(0.7, salience),
+                "keywords": keywords,
                 **(payload.metadata or {}),
             },
         }
@@ -153,6 +162,7 @@ async def observe(payload: ObserveRequest) -> ObserveResponse:
 @app.post("/remember", response_model=RememberResponse)
 async def remember(payload: RememberRequest) -> RememberResponse:
     canon = canonicalize_memory(payload.text)
+    keywords = _keywords_from_text(canon)
     memory_payload = {
         "user_id": payload.user_id,
         "text": canon,
@@ -162,6 +172,7 @@ async def remember(payload: RememberRequest) -> RememberResponse:
             "kind": payload.kind,
             "salience": 1.0,
             "confidence": 0.95,
+            "keywords": keywords,
             **(payload.metadata or {}),
         },
     }

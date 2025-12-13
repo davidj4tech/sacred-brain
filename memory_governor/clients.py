@@ -87,21 +87,29 @@ class HippocampusClient:
         q = query.lower()
         matched: List[Dict[str, Any]] = []
         now = None
-        tokens = [tok for tok in q.split() if tok]
+        import re
+
+        tokens = [tok for tok in re.findall(r"\w+", q) if tok]
         for mem in results:
             text = (mem.get("text") or mem.get("memory") or "").lower()
-            if q in text:
+            keywords = (mem.get("metadata", {}) or {}).get("keywords") or []
+            kw_lower = [str(k).lower() for k in keywords]
+            text_hits = q in text
+            kw_hits = q in " ".join(kw_lower)
+            if text_hits or kw_hits:
                 matched.append(mem)
                 continue
             # all tokens must appear (AND)
-            if tokens and all(tok in text for tok in tokens):
+            if tokens and all(tok in text or tok in kw_lower for tok in tokens):
                 matched.append(mem)
                 continue
         # If no AND match, fall back to OR matching
         if not matched and tokens:
             for mem in results:
                 text = (mem.get("text") or mem.get("memory") or "").lower()
-                if any(tok in text for tok in tokens):
+                keywords = (mem.get("metadata", {}) or {}).get("keywords") or []
+                kw_lower = [str(k).lower() for k in keywords]
+                if any(tok in text or tok in kw_lower for tok in tokens):
                     matched.append(mem)
 
         if matched:
