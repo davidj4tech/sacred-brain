@@ -89,7 +89,7 @@ class HippocampusClient:
         now = None
         for mem in results:
             text = (mem.get("text") or mem.get("memory") or "").lower()
-            if q in text:
+            if any(tok in text for tok in [q, *q.split()]):
                 matched.append(mem)
 
         if matched:

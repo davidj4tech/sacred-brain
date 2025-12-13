@@ -21,7 +21,7 @@ max_tokens = 512
 [mem0]
 enabled = true
 api_key = "mem0_local_22b1c5c9f3a04ec3b5d4f8aa95dd1d72"
-backend = "memory"
+backend = "sqlite"
 backend_url = "http://localhost:8888"
 persistence_path = "data/hippocampus_memories.sqlite"
 summary_max_length = 480
