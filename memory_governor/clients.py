@@ -63,7 +63,17 @@ class HippocampusClient:
                 )
                 resp.raise_for_status()
                 data = resp.json()
-                return data.get("memories", [])
+                results = data.get("memories", [])
             except Exception as exc:
                 LOGGER.error("Hippocampus query failed: %s", exc)
                 return []
+
+        # Fallback substring filter (case-insensitive)
+        q = query.lower()
+        filtered = []
+        for mem in results:
+            text = (mem.get("text") or mem.get("memory") or "").lower()
+            if q in text:
+                filtered.append(mem)
+        # If nothing matched substring, return originals
+        return filtered[:limit] if filtered else results[: (limit or len(results))]
