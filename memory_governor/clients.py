@@ -66,7 +66,22 @@ class HippocampusClient:
                 results = data.get("memories", [])
             except Exception as exc:
                 LOGGER.error("Hippocampus query failed: %s", exc)
-                return []
+                results = []
+
+            # Fallback: if empty or no substring matches, try without query to list recent items and filter locally
+            if not results:
+                try:
+                    resp2 = await client.get(
+                        f"{self.hippo_url}/memories/{user_id}",
+                        params={"limit": limit or 10},
+                        headers=self._headers(),
+                    )
+                    resp2.raise_for_status()
+                    data2 = resp2.json()
+                    results = data2.get("memories", [])
+                except Exception as exc2:
+                    LOGGER.error("Hippocampus fallback list failed: %s", exc2)
+                    return []
 
         # Fallback substring filter (case-insensitive) and simple recency weighting if timestamps present
         q = query.lower()
