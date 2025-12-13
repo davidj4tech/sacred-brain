@@ -93,11 +93,16 @@ class HippocampusClient:
             if q in text:
                 matched.append(mem)
                 continue
+            # all tokens must appear (AND)
             if tokens and all(tok in text for tok in tokens):
                 matched.append(mem)
                 continue
-            if tokens and any(tok in text for tok in tokens):
-                matched.append(mem)
+        # If no AND match, fall back to OR matching
+        if not matched and tokens:
+            for mem in results:
+                text = (mem.get("text") or mem.get("memory") or "").lower()
+                if any(tok in text for tok in tokens):
+                    matched.append(mem)
 
         if matched:
             def _score(mem: Dict[str, Any]) -> float:
