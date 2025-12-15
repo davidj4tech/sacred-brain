@@ -1,0 +1,13 @@
+maubot: 0.4.0
+id: org.sacredbrain.mention
+version: 0.1.0
+license: MIT
+modules:
+  - sacredbrain_mention
+main_class: SacredBrainMentionBot
+database: false
+config:
+  default: config.example.yaml
+  schema: config.schema.json
+pip_dependencies:
+  - httpx>=0.27

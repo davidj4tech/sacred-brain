@@ -1,0 +1,14 @@
+[Unit]
+Description=Prune auto memories (low-salience) from Hippocampus
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/sacred-brain
+User=sacred
+Group=sacred
+Environment=HIPPOCAMPUS_SQLITE_PATH=/opt/sacred-brain/data/hippocampus_memories.sqlite
+ExecStart=/opt/sacred-brain/.venv/bin/python scripts/prune_auto_memories.py
+
+[Install]
+WantedBy=multi-user.target

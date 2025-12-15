@@ -1,0 +1,15 @@
+[Unit]
+Description=Auto memory tuning for Sam capture gating
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/sacred-brain
+User=sacred
+Group=sacred
+Environment=HIPPOCAMPUS_SQLITE_PATH=/opt/sacred-brain/data/hippocampus_memories.sqlite
+Environment=AUTO_TUNE_PATH=/opt/sacred-brain/var/auto_memory_tuning.json
+ExecStart=/opt/sacred-brain/.venv/bin/python scripts/auto_memory_tuner.py
+
+[Install]
+WantedBy=multi-user.target

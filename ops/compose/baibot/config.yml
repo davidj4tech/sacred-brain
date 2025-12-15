@@ -1,0 +1,74 @@
+homeserver:
+  server_name: ryer.org
+  url: https://matrix.ryer.org
+
+user:
+  mxid_localpart: sam
+  password: sam2345
+  name: Sam
+  encryption:
+    recovery_passphrase: null
+    recovery_reset_allowed: false
+
+command_prefix: "!bai"
+
+room:
+  post_join_self_introduction_enabled: false
+
+access:
+  admin_patterns:
+    - "@ryer:ryer.org"
+
+persistence:
+  data_dir_path: /data
+  session_encryption_key: ""
+  config_encryption_key: ""
+
+agents:
+  static_definitions:
+    - id: static/litellm
+      provider: openai
+      config:
+        base_url: http://host.docker.internal:4000/v1
+        api_key: ""
+        text_generation:
+          model_id: sam-fast
+          prompt: "You are a brief, helpful assistant."
+          temperature: 0.3
+          max_response_tokens: 1024
+        speech_to_text:
+          model_id: whisper-1
+        text_to_speech:
+          model_id: sam-fast
+          voice: onyx
+          speed: 1.0
+          response_format: opus
+    - id: litellm
+      provider: openai
+      config:
+        base_url: http://host.docker.internal:4000/v1
+        api_key: ""
+        text_generation:
+          model_id: sam-fast
+          prompt: "You are a brief, helpful assistant."
+          temperature: 0.3
+          max_response_tokens: 1024
+        speech_to_text:
+          model_id: whisper-1
+        text_to_speech:
+          model_id: sam-fast
+          voice: onyx
+          speed: 1.0
+          response_format: opus
+
+initial_global_config:
+  handler:
+    catch_all: static/litellm
+    text_generation: static/litellm
+    text_to_speech: static/litellm
+    speech_to_text: static/litellm
+    image_generation: null
+  user_patterns:
+    - "@*:ryer.org"
+
+logging: warn,mxlink=debug,baibot=debug

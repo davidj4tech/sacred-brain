@@ -1,0 +1,23 @@
+{
+  "name": "hippocampus",
+  "description": "Store and query memories via the Sacred Brain Hippocampus API.",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["create", "query", "summarize"],
+        "description": "Action to perform: create a memory, query memories, or summarize snippets."
+      },
+      "user_id": {"type": "string", "description": "User identifier (required for create/query)."},
+      "text": {"type": "string", "description": "Memory text (for create) or concatenated context (for summarize)."},
+      "metadata": {"type": "object", "description": "Optional metadata for the memory."},
+      "query": {"type": "string", "description": "Query string for search."},
+      "limit": {"type": "integer", "description": "Max memories to return (default 5)."},
+      "texts": {"type": "array", "items": {"type": "string"}, "description": "List of texts to summarize."}
+    },
+    "required": ["action"],
+    "additionalProperties": false
+  },
+  "instructions": "Call the hippocampus memory API on port 54321. Use action=create to POST /memories with user_id, text, metadata. Use action=query to GET /memories/{user_id}?query=...&limit=... . Use action=summarize to POST /summaries with texts."
+}

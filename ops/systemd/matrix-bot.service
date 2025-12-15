@@ -1,0 +1,15 @@
+[Unit]
+Description=Sacred Brain Matrix Mention Bot
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/sacred-brain
+EnvironmentFile=/opt/sacred-brain/.env.matrix
+ExecStart=/opt/sacred-brain/.venv/bin/python bots/matrix/mention_bot.py
+User=sacred
+Group=sacred
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

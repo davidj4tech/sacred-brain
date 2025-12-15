@@ -1,0 +1,28 @@
+[project]
+name = "sacred-brain-hippocampus"
+version = "0.1.0"
+description = "FastAPI microservice that exposes a Mem0-backed memory API"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+  { name = "Sacred Brain" }
+]
+license = { text = "MIT" }
+dependencies = [
+  "fastapi>=0.110",
+  "uvicorn>=0.23",
+  "pydantic>=2.5",
+  "python-multipart>=0.0.6",
+  "httpx>=0.25",
+  "mem0ai>=1.0.1",
+  "agno>=2.3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.4",
+]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]

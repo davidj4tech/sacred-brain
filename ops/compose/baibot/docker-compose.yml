@@ -1,0 +1,17 @@
+version: "3.8"
+
+services:
+  baibot:
+    container_name: baibot
+    image: ghcr.io/etkecc/baibot:latest
+    # Bump the tag explicitly when upgrading (avoid :latest to keep deployments reproducible).
+    restart: unless-stopped
+    env_file:
+      - /etc/baibot/baibot.env
+    volumes:
+      - ./config.yml:/app/config.yml:ro
+      - ./data:/data
+    ports:
+      - "127.0.0.1:5500:5500"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

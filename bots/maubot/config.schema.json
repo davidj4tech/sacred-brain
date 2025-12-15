@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "mention": {
+      "type": "string",
+      "default": "@sacredbrain",
+      "description": "Text trigger the bot reacts to (e.g., @botname)."
+    },
+    "allow_rooms": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "Optional allowlist of room IDs; empty means all rooms."
+    },
+    "persona": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Optional persona key to forward to Sacred Brain."
+    },
+    "context_limit": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 10,
+      "description": "How many recent text messages to include as context (best-effort)."
+    },
+    "sacred_brain_url": {
+      "type": "string",
+      "default": "http://127.0.0.1:8000/matrix/respond",
+      "description": "Sacred Brain Matrix handler endpoint."
+    },
+    "api_key": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Optional X-API-Key header value for Sacred Brain."
+    },
+    "timeout_seconds": {
+      "type": "number",
+      "minimum": 1,
+      "default": 30,
+      "description": "HTTP timeout when calling Sacred Brain."
+    }
+  },
+  "required": ["sacred_brain_url"]
+}

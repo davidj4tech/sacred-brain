@@ -1,0 +1,8 @@
+fastapi>=0.110
+uvicorn>=0.23
+pydantic>=2.5
+python-multipart>=0.0.6
+pytest>=7.4
+httpx>=0.25
+mem0ai>=1.0.1
+agno>=2.3.0
