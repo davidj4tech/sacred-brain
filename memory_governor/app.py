@@ -1,17 +1,16 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from memory_governor.clients import HippocampusClient
 from memory_governor.config import GovernorConfig, load_config
-from memory_governor.mem_policy import canonicalize_memory, classify_observation, consolidate_events
+from memory_governor.mem_policy import canonicalize_memory, classify_observation, consolidate_events, default_tier_for_event, extract_tier_and_text
 from memory_governor.schemas import (
     ConsolidateRequest,
     ConsolidateResponse,
@@ -51,16 +50,16 @@ class GovernorRuntime:
             litellm_base_url=cfg.litellm_base_url,
             litellm_api_key=cfg.litellm_api_key,
         )
-        self._queue_rt: Optional[asyncio.Queue] = None
-        self._worker: Optional[asyncio.Task] = None
+        self._queue_rt: asyncio.Queue | None = None
+        self._worker: asyncio.Task | None = None
 
-    def enqueue_memory(self, payload: Dict[str, Any]) -> str:
+    def enqueue_memory(self, payload: dict[str, Any]) -> str:
         job = self.queue.enqueue({"type": "memory", "payload": payload})
         if self._queue_rt:
             self._queue_rt.put_nowait(job)
         return job["id"]
 
-    async def _process_job(self, job: Dict[str, Any]) -> bool:
+    async def _process_job(self, job: dict[str, Any]) -> bool:
         if job.get("type") == "memory":
             mem_payload = job.get("payload", {})
             memory_id = await self.hippo.post_memory(mem_payload)
@@ -115,12 +114,19 @@ async def _on_startup() -> None:
 
 
 @app.get("/health")
-async def health() -> Dict[str, str]:
+async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
 @app.post("/observe", response_model=ObserveResponse)
 async def observe(payload: ObserveRequest) -> ObserveResponse:
+    # Tier tagging (safe/raw) + prefix stripping
+    default_tier = default_tier_for_event(payload)
+    clean_text, tier = extract_tier_and_text(payload.text, default_tier)
+    payload.text = clean_text
+    payload.metadata = payload.metadata or {}
+    payload.metadata.setdefault("tier", tier)
+
     added = runtime.store.add_working(payload)
     if not added:
         return ObserveResponse(
@@ -152,6 +158,8 @@ async def observe(payload: ObserveRequest) -> ObserveResponse:
                 "kind": "episodic",
                 "salience": max(0.7, salience),
                 "keywords": keywords,
+            "tier": (payload.metadata or {}).get("tier", "safe"),
+                "tier": (payload.metadata or {}).get("tier", "safe"),
                 **(payload.metadata or {}),
             },
         }
@@ -167,6 +175,12 @@ async def observe(payload: ObserveRequest) -> ObserveResponse:
 @app.post("/remember", response_model=RememberResponse)
 async def remember(payload: RememberRequest) -> RememberResponse:
     canon = canonicalize_memory(payload.text)
+    # Tier tagging + prefix stripping for explicit remembers
+    default_tier = "safe"
+    clean_text, tier = extract_tier_and_text(canon, default_tier)
+    canon = clean_text
+    payload.metadata = payload.metadata or {}
+    payload.metadata.setdefault("tier", tier)
     keywords = _keywords_from_text(canon)
     memory_payload = {
         "user_id": payload.user_id,
@@ -178,7 +192,9 @@ async def remember(payload: RememberRequest) -> RememberResponse:
             "salience": 1.0,
             "confidence": 0.95,
             "keywords": keywords,
-            **(payload.metadata or {}),
+            "tier": (payload.metadata or {}).get("tier", "safe"),
+                "tier": (payload.metadata or {}).get("tier", "safe"),
+                **(payload.metadata or {}),
         },
     }
     job_id = runtime.enqueue_memory(memory_payload)
@@ -196,6 +212,9 @@ async def recall(payload: RecallRequest) -> RecallResponse:
     for mem in memories:
         meta = mem.get("metadata", {}) or {}
         kind = meta.get("kind")
+        tier = meta.get("tier") or "safe"
+        if payload.filters.tiers and tier not in payload.filters.tiers:
+            continue
         if payload.filters.kinds and kind and kind not in payload.filters.kinds:
             continue
         confidence = meta.get("confidence")
@@ -207,6 +226,7 @@ async def recall(payload: RecallRequest) -> RecallResponse:
             {
                 "text": mem.get("text") or mem.get("memory") or "",
                 "kind": kind,
+                "tier": tier,
                 "confidence": confidence,
                 "timestamp": ts,
                 "provenance": {
@@ -218,7 +238,7 @@ async def recall(payload: RecallRequest) -> RecallResponse:
         )
     # Simple rerank: combine confidence and recency
     now = time.time()
-    def _score(item: Dict[str, Any]) -> float:
+    def _score(item: dict[str, Any]) -> float:
         conf = item.get("confidence") or 0.5
         ts_val = item.get("timestamp")
         if ts_val:
@@ -250,6 +270,7 @@ async def consolidate(payload: ConsolidateRequest) -> ConsolidateResponse:
                     "source": item["provenance"].get("source"),
                     "kind": item.get("kind", kind),
                     "confidence": item.get("confidence", 0.5),
+                    "tier": item.get("tier") or item.get("provenance", {}).get("tier") or "safe",
                     **{k: v for k, v in item.get("provenance", {}).items() if v is not None},
                 },
             }

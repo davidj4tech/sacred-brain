@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import os
 import re
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 from memory_governor.schemas import ObserveRequest
 
@@ -27,8 +28,53 @@ def _keyword_score(text: str) -> float:
     return min(1.0, 0.15 * hits)
 
 
-def classify_observation(event: ObserveRequest) -> Tuple[float, str]:
+def extract_tier_and_text(text: str, default_tier: str) -> tuple[str, str]:
+    """Return (clean_text, tier).
+
+    Tier rules:
+    - If text starts with 'raw:' or 'private:' -> tier=raw
+    - If text starts with 'safe:' -> tier=safe
+    - Otherwise -> default_tier
+
+    Prefix is stripped from stored text.
+    """
+
+    t = text.strip()
+    low = t.lower()
+
+    for prefix, tier in (
+        ("raw:", "raw"),
+        ("private:", "raw"),
+        ("safe:", "safe"),
+    ):
+        if low.startswith(prefix):
+            return t[len(prefix) :].lstrip(), tier
+
+    return t, default_tier
+
+
+def default_tier_for_event(event: ObserveRequest) -> str:
+    """Compute default tier for an event based on scope (e.g., raw-by-default rooms)."""
+
+    # Raw-by-default room allowlist
+    raw_rooms = {
+        r.strip()
+        for r in (os.environ.get("MG_RAW_ROOM_IDS", "") or "").split(",")
+        if r.strip()
+    }
+
+    try:
+        if event.scope.kind == "room" and event.scope.id in raw_rooms:
+            return "raw"
+    except Exception:
+        pass
+
+    return "safe"
+
+
+def classify_observation(event: ObserveRequest) -> tuple[float, str]:
     """Return salience and decision kind."""
+
     text = event.text.strip()
     base = 0.1 + min(0.5, len(text) / 4000.0)
     base += _keyword_score(text)
@@ -58,22 +104,27 @@ def canonicalize_memory(text: str) -> str:
 
 
 def consolidate_events(
-    events: List[Dict[str, Any]],
+    events: list[dict[str, Any]],
     mode: str = "all",
-) -> Dict[str, List[Dict[str, Any]]]:
+) -> dict[str, list[dict[str, Any]]]:
     """Produce simple extractions for episodic/semantic/procedural."""
-    episodic: List[Dict[str, Any]] = []
-    semantic: List[Dict[str, Any]] = []
-    procedural: List[Dict[str, Any]] = []
+
+    episodic: list[dict[str, Any]] = []
+    semantic: list[dict[str, Any]] = []
+    procedural: list[dict[str, Any]] = []
 
     for evt in events:
         text = evt.get("text", "")
+        meta = evt.get("metadata") or {}
+        tier = meta.get("tier") or "safe"
+
         provenance = {
             "source": evt.get("source"),
             "event_id": evt.get("event_id"),
             "scope_id": evt.get("scope_id"),
             "scope_kind": evt.get("scope_kind"),
             "timestamp": evt.get("timestamp"),
+            "tier": tier,
         }
         lower = text.lower()
 
@@ -83,6 +134,7 @@ def consolidate_events(
                     "text": text,
                     "kind": "episodic",
                     "confidence": 0.5,
+                    "tier": tier,
                     "provenance": provenance,
                 }
             )
@@ -93,6 +145,7 @@ def consolidate_events(
                         "text": canonicalize_memory(text),
                         "kind": "semantic",
                         "confidence": 0.7 if any(tok in lower for tok in ["prefer", "always", "never"]) else 0.6,
+                        "tier": tier,
                         "provenance": provenance,
                     }
                 )
@@ -103,6 +156,7 @@ def consolidate_events(
                         "text": canonicalize_memory(text),
                         "kind": "procedural",
                         "confidence": 0.65 if "runbook" in lower else 0.55,
+                        "tier": tier,
                         "provenance": provenance,
                     }
                 )

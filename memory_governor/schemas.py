@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -14,9 +14,9 @@ class ObserveRequest(BaseModel):
     source: str
     user_id: str
     text: str
-    timestamp: Optional[int] = None
+    timestamp: int | None = None
     scope: Scope
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ObserveDecision(BaseModel):
@@ -36,19 +36,20 @@ class RememberRequest(BaseModel):
     text: str
     kind: Literal["semantic", "episodic", "procedural", "working", "stream"] = "semantic"
     scope: Scope
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class RememberResponse(BaseModel):
     status: str
-    memory_id: Optional[str] = None
+    memory_id: str | None = None
 
 
 class RecallFilters(BaseModel):
-    kinds: Optional[List[str]] = None
-    min_confidence: Optional[float] = None
-    since_days: Optional[int] = None
-    scope: Optional[Scope] = None
+    kinds: list[str] | None = None
+    tiers: list[str] | None = None  # e.g., ["safe"], ["safe","raw"], ["archive"]
+    min_confidence: float | None = None
+    since_days: int | None = None
+    scope: Scope | None = None
 
 
 class RecallRequest(BaseModel):
@@ -60,14 +61,15 @@ class RecallRequest(BaseModel):
 
 class RecallItem(BaseModel):
     text: str
-    kind: Optional[str] = None
-    confidence: Optional[float] = None
-    timestamp: Optional[int] = None
-    provenance: Dict[str, Any] = Field(default_factory=dict)
+    kind: str | None = None
+    tier: str | None = None
+    confidence: float | None = None
+    timestamp: int | None = None
+    provenance: dict[str, Any] = Field(default_factory=dict)
 
 
 class RecallResponse(BaseModel):
-    results: List[RecallItem]
+    results: list[RecallItem]
 
 
 class ConsolidateRequest(BaseModel):
