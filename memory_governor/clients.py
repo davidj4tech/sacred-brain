@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional, Iterable, Union
+from typing import Any
 
 import httpx
 
@@ -11,17 +11,15 @@ LOGGER = logging.getLogger(__name__)
 class HippocampusClient:
     def __init__(
         self,
-        ingest_url: str,
         hippocampus_url: str,
-        hippocampus_api_key: Optional[str] = None,
+        hippocampus_api_key: str | None = None,
         timeout: float = 5.0,
         rerank_enabled: bool = False,
         rerank_model: str = "gpt-4o-mini",
         rerank_max: int = 10,
-        litellm_base_url: Optional[str] = None,
-        litellm_api_key: Optional[str] = None,
+        litellm_base_url: str | None = None,
+        litellm_api_key: str | None = None,
     ) -> None:
-        self.ingest_url = ingest_url
         self.hippo_url = hippocampus_url.rstrip("/")
         self.hippo_key = hippocampus_api_key
         self.timeout = timeout
@@ -31,13 +29,13 @@ class HippocampusClient:
         self.litellm_base_url = litellm_base_url
         self.litellm_api_key = litellm_api_key
 
-    def _headers(self) -> Dict[str, str]:
-        headers: Dict[str, str] = {}
+    def _headers(self) -> dict[str, str]:
+        headers: dict[str, str] = {}
         if self.hippo_key:
             headers["X-API-Key"] = self.hippo_key
         return headers
 
-    async def _rerank(self, query: str, candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    async def _rerank(self, query: str, candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if not (self.rerank_enabled and self.litellm_base_url and self.rerank_model and candidates):
             return candidates
         import json as _json
@@ -73,31 +71,24 @@ class HippocampusClient:
             LOGGER.warning("Rerank failed, using original order: %s", exc)
         return candidates
 
-    async def post_memory(self, payload: Dict[str, Any]) -> Optional[str]:
-        """Prefer ingest; fall back to Hippocampus direct."""
+    async def post_memory(self, payload: dict[str, Any]) -> str | None:
+        """Write a memory directly to Hippocampus."""
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             try:
-                resp = await client.post(self.ingest_url, json=payload)
+                resp = await client.post(
+                    f"{self.hippo_url}/memories", json=payload, headers=self._headers()
+                )
                 resp.raise_for_status()
                 data = resp.json()
-                return data.get("memory_id") or data.get("id")
+                return data.get("memory", {}).get("id") or data.get("id") or "hippo-ok"
             except Exception as exc:
-                LOGGER.warning("Ingest write failed, falling back to Hippocampus: %s", exc)
-                try:
-                    resp = await client.post(
-                        f"{self.hippo_url}/memories", json=payload, headers=self._headers()
-                    )
-                    resp.raise_for_status()
-                    data = resp.json()
-                    return data.get("memory", {}).get("id") or data.get("id")
-                except Exception as final_exc:
-                    LOGGER.error("Hippocampus write failed: %s", final_exc)
-                    return None
+                LOGGER.error("Hippocampus write failed: %s", exc)
+                return None
 
     async def query_memories(
-        self, user_id: str, query: str, limit: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
-        params: Dict[str, Any] = {"query": query}
+        self, user_id: str, query: str, limit: int | None = None
+    ) -> list[dict[str, Any]]:
+        params: dict[str, Any] = {"query": query}
         if limit:
             params["limit"] = limit
         async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -131,7 +122,7 @@ class HippocampusClient:
 
         # Fallback substring filter (case-insensitive) and simple recency weighting if timestamps present
         q = query.lower()
-        matched: List[Dict[str, Any]] = []
+        matched: list[dict[str, Any]] = []
         now = None
         import re
 
@@ -159,7 +150,7 @@ class HippocampusClient:
                     matched.append(mem)
 
         if matched:
-            def _score(mem: Dict[str, Any]) -> float:
+            def _score(mem: dict[str, Any]) -> float:
                 meta = mem.get("metadata", {}) or {}
                 ts = meta.get("timestamp")
                 try:

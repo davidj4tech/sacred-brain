@@ -41,7 +41,6 @@ class GovernorRuntime:
         self.stream = StreamLog(cfg.stream_log_path, ttl_days=cfg.stream_ttl_days) if cfg.stream_enable else None
         self.queue = DurableQueue(cfg.spool_path)
         self.hippo = HippocampusClient(
-            ingest_url=cfg.ingest_url,
             hippocampus_url=cfg.hippocampus_url,
             hippocampus_api_key=cfg.hippocampus_api_key,
             rerank_enabled=cfg.rerank_enabled,
@@ -60,12 +59,18 @@ class GovernorRuntime:
         return job["id"]
 
     async def _process_job(self, job: dict[str, Any]) -> bool:
-        if job.get("type") == "memory":
-            mem_payload = job.get("payload", {})
+        # DurableQueue wraps items in {"id", "payload", "ts"} envelope.
+        # The actual item is inside job["payload"], which has {"type", "payload"}.
+        inner = job.get("payload", job)
+        if inner.get("type") == "memory":
+            mem_payload = inner.get("payload", {})
             memory_id = await self.hippo.post_memory(mem_payload)
             if memory_id:
+                LOGGER.info("Memory written to Hippocampus: %s", memory_id)
                 return True
+            LOGGER.warning("Memory write to Hippocampus failed")
             return False
+        LOGGER.warning("Unknown job type: %s (keys: %s)", inner.get("type"), list(job.keys()))
         return True
 
     async def _worker_loop(self) -> None:

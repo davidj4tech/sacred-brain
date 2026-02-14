@@ -1,16 +1,15 @@
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
 
 
-def _as_bool(val: Optional[str], default: bool = False) -> bool:
+def _as_bool(val: str | None, default: bool = False) -> bool:
     if val is None:
         return default
     return val.lower() in {"1", "true", "yes", "on"}
 
 
-def _split_csv(val: Optional[str]) -> List[str]:
+def _split_csv(val: str | None) -> list[str]:
     if not val:
         return []
     return [item.strip() for item in val.split(",") if item.strip()]
@@ -20,18 +19,17 @@ def _split_csv(val: Optional[str]) -> List[str]:
 class GovernorConfig:
     bind_host: str = "127.0.0.1"
     port: int = 54323
-    ingest_url: str = "http://127.0.0.1:54322/ingest"
     hippocampus_url: str = "http://127.0.0.1:54321"
-    hippocampus_api_key: Optional[str] = None
+    hippocampus_api_key: str | None = None
     litellm_base_url: str = "http://127.0.0.1:4000"
-    litellm_api_key: Optional[str] = None
+    litellm_api_key: str | None = None
     stream_enable: bool = False
     stream_ttl_days: int = 14
     working_ttl_hours: int = 24
     rooms_scope: str = "room"
     log_assistant: bool = False
     mem0_env_prefix: str = "MEM0_"
-    consolidate_scopes: List[str] = field(default_factory=list)
+    consolidate_scopes: list[str] = field(default_factory=list)
     rerank_enabled: bool = False
     rerank_model: str = "gpt-4o-mini"
     rerank_max: int = 10
@@ -61,7 +59,6 @@ def load_config() -> GovernorConfig:
     cfg = GovernorConfig(
         bind_host=os.environ.get("MG_BIND_HOST", "127.0.0.1"),
         port=int(os.environ.get("MG_PORT", "54323")),
-        ingest_url=os.environ.get("INGEST_URL", "http://127.0.0.1:54322/ingest"),
         hippocampus_url=os.environ.get("HIPPOCAMPUS_URL", "http://127.0.0.1:54321"),
         hippocampus_api_key=os.environ.get("HIPPOCAMPUS_API_KEY"),
         litellm_base_url=os.environ.get("LITELLM_BASE_URL", "http://127.0.0.1:4000"),
