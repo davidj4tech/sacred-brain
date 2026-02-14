@@ -10,3 +10,16 @@ ops/compose/mautrix-meta/config.yaml
 ops/compose/mautrix-meta/registration.yaml
 ops/compose/mautrix-meta/*.db
 ops/compose/mautrix-meta/logs/
+
+# Runtime data
+maubot-data/
+bench_sam_fast_remote_*/
+ext/mem0/
+
+# Session/IDE artifacts
+.codex/
+codex/
+codex-resume.txt
+
+# Secrets
+.env.*
