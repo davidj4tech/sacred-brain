@@ -1,11 +1,10 @@
 """Configuration loading utilities for the hippocampus service."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
-from pathlib import Path
 import os
 import tomllib
-from typing import List
+from dataclasses import dataclass, field, replace
+from pathlib import Path
 
 
 @dataclass
@@ -13,14 +12,14 @@ class AppSettings:
     host: str = "0.0.0.0"
     port: int = 54321
     log_level: str = "INFO"
-    allow_origins: List[str] = field(default_factory=lambda: ["*"])
+    allow_origins: list[str] = field(default_factory=lambda: ["*"])
 
 
 @dataclass
 class AuthSettings:
     enabled: bool = False
     header_name: str = "X-API-Key"
-    api_keys: List[str] = field(default_factory=list)
+    api_keys: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -71,6 +70,23 @@ class SamLLMSettings:
 
 
 @dataclass
+class SamBirthSettings:
+    timestamp: str = "2025-11-22T16:35:00"
+    timezone: str = "Australia/Melbourne"
+    location_name: str = "Melbourne, Australia"
+    latitude: float = -37.8136
+    longitude: float = 144.9631
+
+
+@dataclass
+class SamAstrologySettings:
+    enabled: bool = False
+    engine: str = "swisseph"
+    signals_enabled: bool = True
+    cache_path: str = "var/cache/sam_chart.json"
+
+
+@dataclass
 class HippocampusSettings:
     app: AppSettings = field(default_factory=AppSettings)
     auth: AuthSettings = field(default_factory=AuthSettings)
@@ -79,6 +95,8 @@ class HippocampusSettings:
     agno: AgnoSettings = field(default_factory=AgnoSettings)
     notes: NotesSettings = field(default_factory=NotesSettings)
     sam: SamLLMSettings = field(default_factory=SamLLMSettings)
+    sam_birth: SamBirthSettings = field(default_factory=SamBirthSettings)
+    sam_astrology: SamAstrologySettings = field(default_factory=SamAstrologySettings)
 
 
 def load_settings(config_path: str | Path | None = None) -> HippocampusSettings:
@@ -96,6 +114,8 @@ def load_settings(config_path: str | Path | None = None) -> HippocampusSettings:
     agno_data = file_data.get("agno", {}) if isinstance(file_data, dict) else {}
     notes_data = file_data.get("notes", {}) if isinstance(file_data, dict) else {}
     sam_data = file_data.get("sam", {}) if isinstance(file_data, dict) else {}
+    sam_birth_data = sam_data.get("birth", {}) if isinstance(sam_data, dict) else {}
+    sam_astrology_data = sam_data.get("astrology", {}) if isinstance(sam_data, dict) else {}
 
     settings = HippocampusSettings(
         app=_load_app_settings(app_data),
@@ -105,6 +125,8 @@ def load_settings(config_path: str | Path | None = None) -> HippocampusSettings:
         agno=_load_agno_settings(agno_data),
         notes=_load_notes_settings(notes_data),
         sam=_load_sam_settings(sam_data),
+        sam_birth=_load_sam_birth_settings(sam_birth_data),
+        sam_astrology=_load_sam_astrology_settings(sam_astrology_data),
     )
     return _apply_env_overrides(settings)
 
@@ -233,6 +255,29 @@ def _load_sam_settings(raw: object) -> SamLLMSettings:
     )
 
 
+def _load_sam_birth_settings(raw: object) -> SamBirthSettings:
+    if not isinstance(raw, dict):
+        return SamBirthSettings()
+    return SamBirthSettings(
+        timestamp=str(raw.get("timestamp", "2025-11-22T16:35:00")),
+        timezone=str(raw.get("timezone", "Australia/Melbourne")),
+        location_name=str(raw.get("location_name", "Melbourne, Australia")),
+        latitude=float(raw.get("latitude", -37.8136)),
+        longitude=float(raw.get("longitude", 144.9631)),
+    )
+
+
+def _load_sam_astrology_settings(raw: object) -> SamAstrologySettings:
+    if not isinstance(raw, dict):
+        return SamAstrologySettings()
+    return SamAstrologySettings(
+        enabled=bool(raw.get("enabled", False)),
+        engine=str(raw.get("engine", "swisseph")),
+        signals_enabled=bool(raw.get("signals_enabled", True)),
+        cache_path=str(raw.get("cache_path", "var/cache/sam_chart.json")),
+    )
+
+
 def _apply_env_overrides(settings: HippocampusSettings) -> HippocampusSettings:
     env_map: dict[str, tuple[str, callable]] = {
         "app.host": ("HIPPOCAMPUS_APP_HOST", str),
@@ -269,6 +314,15 @@ def _apply_env_overrides(settings: HippocampusSettings) -> HippocampusSettings:
         "sam.reflection_enabled": ("SAM_REFLECTION_ENABLED", _to_bool),
         "sam.memory_context_max": ("SAM_MEMORY_CONTEXT_MAX", int),
         "sam.memory_candidates_max": ("SAM_MEMORY_CANDIDATES_MAX", int),
+        "sam_birth.timestamp": ("SAM_BIRTH_TIMESTAMP", str),
+        "sam_birth.timezone": ("SAM_BIRTH_TIMEZONE", str),
+        "sam_birth.location_name": ("SAM_BIRTH_LOCATION_NAME", str),
+        "sam_birth.latitude": ("SAM_BIRTH_LATITUDE", float),
+        "sam_birth.longitude": ("SAM_BIRTH_LONGITUDE", float),
+        "sam_astrology.enabled": ("SAM_ASTROLOGY_ENABLED", _to_bool),
+        "sam_astrology.engine": ("SAM_ASTROLOGY_ENGINE", str),
+        "sam_astrology.signals_enabled": ("SAM_ASTROLOGY_SIGNALS_ENABLED", _to_bool),
+        "sam_astrology.cache_path": ("SAM_ASTROLOGY_CACHE_PATH", str),
     }
 
     updated = settings
@@ -299,6 +353,10 @@ def _assign_path(settings: HippocampusSettings, path: str, value: object) -> Hip
         return replace(settings, notes=replace(settings.notes, **{attr: value}))
     if top == "sam":
         return replace(settings, sam=replace(settings.sam, **{attr: value}))
+    if top == "sam_birth":
+        return replace(settings, sam_birth=replace(settings.sam_birth, **{attr: value}))
+    if top == "sam_astrology":
+        return replace(settings, sam_astrology=replace(settings.sam_astrology, **{attr: value}))
     return settings
 
 
@@ -321,6 +379,8 @@ __all__ = [
     "SummarizerSettings",
     "Mem0Settings",
     "SamLLMSettings",
+    "SamBirthSettings",
+    "SamAstrologySettings",
     "HippocampusSettings",
     "load_settings",
 ]

@@ -2,19 +2,21 @@
 from __future__ import annotations
 
 import logging
+import os
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Security
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
 
-from .config import AuthSettings, SummarizerSettings, HippocampusSettings, load_settings
-from .logging_config import configure_logging
+from sacred_brain.astrology import BirthInfo, compute_bias_note
+from sacred_brain.sam_pipeline import last_route_info
+
 from .agno_integration import build_agno_agent
+from .bot_router import BotRouter
+from .config import AuthSettings, HippocampusSettings, load_settings
+from .logging_config import configure_logging
 from .mem0_adapter import Mem0Adapter
-from .reflection import reflection_pass
-from .summarizers import SummarizerConfig, summarize_texts as summarize_via_llm
-from sacred_brain.sam_pipeline import sam_generate_reply
-from sacred_brain.prompts import sam_system
 from .models import (
     ExperienceCreate,
     HealthResponse,
@@ -23,9 +25,12 @@ from .models import (
     MemoryCreateResponse,
     MemoryDeleteResponse,
     MemoryQueryResponse,
-    SummaryResponse,
     SummarizeRequest,
+    SummaryResponse,
 )
+from .reflection import reflection_pass
+from .summarizers import SummarizerConfig
+from .summarizers import summarize_texts as summarize_via_llm
 
 LOGGER = logging.getLogger(__name__)
 
@@ -50,6 +55,9 @@ def _build_auth_dependency(auth_settings: AuthSettings):
 def create_app(settings: HippocampusSettings | None = None) -> FastAPI:
     settings = settings or load_settings()
     configure_logging(settings)
+
+    admin_users_env = os.getenv("SAM_ADMIN_USERS", "")
+    admin_users = {u.strip() for u in admin_users_env.split(",") if u.strip()}
 
     application = FastAPI(title="Sacred Brain – Hippocampus", version="0.1.0")
     adapter = Mem0Adapter(
@@ -81,6 +89,19 @@ def create_app(settings: HippocampusSettings | None = None) -> FastAPI:
     application.state.mem0_adapter = adapter
     application.state.agno_agent = agno_agent
     application.state.settings = settings
+    application.state.sam_bias_note = compute_bias_note(
+        enabled=settings.sam_astrology.enabled,
+        birth=BirthInfo(
+            timestamp=settings.sam_birth.timestamp,
+            timezone=settings.sam_birth.timezone,
+            location_name=settings.sam_birth.location_name,
+            latitude=settings.sam_birth.latitude,
+            longitude=settings.sam_birth.longitude,
+        ),
+        cache_path=Path(settings.sam_astrology.cache_path),
+        engine=settings.sam_astrology.engine,
+        signals_enabled=settings.sam_astrology.signals_enabled,
+    )
     auth_dependency = _build_auth_dependency(settings.auth)
 
     @application.get("/health", response_model=HealthResponse)
@@ -140,32 +161,25 @@ def create_app(settings: HippocampusSettings | None = None) -> FastAPI:
         _: None = Depends(auth_dependency),
     ) -> MatrixRelayResponse:
         agno_agent = getattr(request.app.state, "agno_agent", None)
-        texts = list(payload.context) + [f"{payload.sender}: {payload.body}"]
+        bias_note = getattr(request.app.state, "sam_bias_note", "")
 
-        if settings.sam.enabled:
-            mems = adapter.query_memories(user_id=payload.sender, query=payload.body, limit=settings.sam.memory_candidates_max)
-            reply = sam_generate_reply(payload.body, mems, sam_system.SYSTEM_PROMPT)
-        elif settings.agno.enabled and agno_agent:
-            prompt = _format_matrix_prompt(payload.sender, payload.body, payload.context)
-            try:
-                run = agno_agent.run(prompt, user_id=payload.sender, session_id=payload.room_id)
-                content = getattr(run, "content", None)
-                reply = content if isinstance(content, str) else getattr(run, "get_content_as_string", lambda: "")()
-            except Exception as exc:  # pragma: no cover - defensive
-                # Fall back to the summarizer if the agent fails.
-                LOGGER.warning("Agno agent failed; falling back to summarizer: %s", exc, exc_info=True)
-                reply = None
-        else:
-            reply = None
+        router = BotRouter(
+            settings=settings,
+            adapter=adapter,
+            agno_agent=agno_agent,
+            summarizer_config=summarizer_config,
+            sam_bias_note=bias_note,
+        )
+
+        reply = router.generate_response(
+            sender=payload.sender,
+            body=payload.body,
+            context=payload.context,
+            room_id=payload.room_id,
+        )
 
         if not reply:
-            reply = (
-                summarize_via_llm(texts, summarizer_config)
-                if summarizer_config.enabled
-                else adapter.summarize_texts(texts)
-            )
-        if not reply:
-            reply = "I need more context before I can help."
+            reply = "I'm having trouble thinking right now."
 
         reflection = reflection_pass(
             adapter=adapter,
@@ -176,19 +190,21 @@ def create_app(settings: HippocampusSettings | None = None) -> FastAPI:
         if reflection:
             reply = f"{reply}\n\n{reflection}"
 
+        if payload.sender in admin_users:
+            route_meta = last_route_info()
+            if route_meta:
+                reply = f"{reply}\n\n(model: {route_meta.get('alias','?')} reason: {route_meta.get('reason','?')})"
+
         return MatrixRelayResponse(reply=reply)
 
+    @application.get("/doctor")
+    async def doctor() -> dict:
+        from sacred_brain.doctor import check_litellm
+
+        litellm_status = check_litellm()
+        return {"litellm": litellm_status}
+
     return application
-
-
-@app.get("/doctor")
-async def doctor() -> dict:
-    from sacred_brain.doctor import check_litellm
-
-    litellm_status = check_litellm()
-    return {
-        "litellm": litellm_status,
-    }
 
 
 def get_adapter(request: Request) -> Mem0Adapter:
@@ -196,17 +212,6 @@ def get_adapter(request: Request) -> Mem0Adapter:
     if not adapter:
         raise RuntimeError("Mem0 adapter has not been initialised")
     return adapter
-
-
-def _format_matrix_prompt(sender: str, body: str, context: list[str]) -> str:
-    context_lines = "\n".join(f"- {line}" for line in context) if context else "No prior context."
-    return (
-        "You are responding to a Matrix mention. "
-        "Use the tools to fetch or store memories for this sender as needed. "
-        f"Sender: {sender}\n"
-        f"Message: {body}\n"
-        f"Context:\n{context_lines}"
-    )
 
 
 app = create_app()

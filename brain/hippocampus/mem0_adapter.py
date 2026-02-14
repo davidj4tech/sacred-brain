@@ -7,10 +7,11 @@ import re
 import sqlite3
 import threading
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from importlib import import_module
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any
 
 from .models import ExperienceCreate, MemoryRecord
 
@@ -80,21 +81,25 @@ class Mem0Adapter:
                 summary_max_length=self.summary_max_length,
                 default_query_limit=self.default_query_limit,
             )
-        except ModuleNotFoundError as exc:
-            LOGGER.warning(
-                "mem0 SDK not installed for remote backend; falling back to in-memory: %s", exc
+        except ImportError as exc:
+            LOGGER.error(
+                "Mem0 SDK ('mem0ai') is not installed. Please run 'pip install mem0ai'. "
+                "Falling back to in-memory store. Error: %s", exc
             )
         except ValueError as exc:
-            LOGGER.warning("Mem0 SDK misconfigured; falling back to in-memory: %s", exc)
-        except Exception as exc:  # pragma: no cover - defensive logging
+            LOGGER.error(
+                "Mem0 configuration error (check HIPPOCAMPUS_MEM0_API_KEY). "
+                "Falling back to in-memory store. Error: %s", exc
+            )
+        except Exception as exc:
             LOGGER.warning(
-                "Failed to initialise remote Mem0 backend, falling back to in-memory: %s",
-                exc,
-                exc_info=True,
+                "Failed to connect to remote Mem0 backend at %s. "
+                "Falling back to in-memory store. Error: %s",
+                self.backend_url, exc, exc_info=True
             )
         return self.fallback_client
 
-    def _build_sqlite_client(self, persistence_path: Path) -> "SQLiteMem0Client":
+    def _build_sqlite_client(self, persistence_path: Path) -> SQLiteMem0Client:
         return SQLiteMem0Client(
             db_path=persistence_path,
             max_summary_chars=self.summary_max_length,
@@ -117,7 +122,7 @@ class Mem0Adapter:
         )
         return self._to_record(payload)
 
-    def query_memories(self, user_id: str, query: str, limit: Optional[int] = None) -> List[MemoryRecord]:
+    def query_memories(self, user_id: str, query: str, limit: int | None = None) -> list[MemoryRecord]:
         result = self._invoke_with_fallback(
             "query_memories",
             user_id=user_id,
@@ -129,9 +134,9 @@ class Mem0Adapter:
             records.append(self._to_record(item))
         return records
 
-    def list_memories(self, user_id: Optional[str] = None, limit: Optional[int] = None) -> List[MemoryRecord]:
+    def list_memories(self, user_id: str | None = None, limit: int | None = None) -> list[MemoryRecord]:
         result = self._invoke_with_fallback("list_memories", user_id=user_id, limit=limit)
-        records: List[MemoryRecord] = []
+        records: list[MemoryRecord] = []
         for item in result or []:
             records.append(self._to_record(item))
         return records
@@ -174,7 +179,7 @@ class Mem0Adapter:
                 return fallback(*args, **kwargs)
             raise
 
-    def _to_record(self, raw: Dict[str, Any]) -> MemoryRecord:
+    def _to_record(self, raw: dict[str, Any]) -> MemoryRecord:
         if not isinstance(raw, dict):
             raise TypeError("Mem0 client must return dictionaries")
         record_id = raw.get("id") or raw.get("_id") or raw.get("memory_id") or str(uuid.uuid4())
@@ -193,9 +198,9 @@ class Mem0Adapter:
 @dataclass
 class InMemoryMem0Client:
     max_summary_chars: int = 480
-    _storage: List[Dict[str, Any]] = field(default_factory=list)
+    _storage: list[dict[str, Any]] = field(default_factory=list)
 
-    def add_memory(self, user_id: str, text: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def add_memory(self, user_id: str, text: str, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
         memory_id = str(uuid.uuid4())
         payload = {
             "id": memory_id,
@@ -207,7 +212,7 @@ class InMemoryMem0Client:
         self._storage.append(payload)
         return payload
 
-    def query_memories(self, user_id: str, query: str, limit: int = 5) -> List[Dict[str, Any]]:
+    def query_memories(self, user_id: str, query: str, limit: int = 5) -> list[dict[str, Any]]:
         query_lower = query.lower()
         matches = [
             memo
@@ -216,7 +221,7 @@ class InMemoryMem0Client:
         ]
         return matches[:limit]
 
-    def summarize(self, texts: List[str], max_length: Optional[int] = None) -> str:
+    def summarize(self, texts: list[str], max_length: int | None = None) -> str:
         max_chars = max_length or self.max_summary_chars
         return _truncate(" ".join(texts), max_chars)
 
@@ -225,7 +230,7 @@ class InMemoryMem0Client:
         self._storage = [memo for memo in self._storage if memo["id"] != memory_id]
         return len(self._storage) < before
 
-    def list_memories(self, user_id: Optional[str] = None, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    def list_memories(self, user_id: str | None = None, limit: int | None = None) -> list[dict[str, Any]]:
         memories = [memo for memo in self._storage if not user_id or memo["user_id"] == user_id]
         return memories[:limit] if limit else list(memories)
 
@@ -261,7 +266,7 @@ class SQLiteMem0Client:
             )
             self._conn.execute("CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id)")
 
-    def add_memory(self, user_id: str, text: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def add_memory(self, user_id: str, text: str, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
         memory_id = str(uuid.uuid4())
         payload = {
             "id": memory_id,
@@ -278,10 +283,10 @@ class SQLiteMem0Client:
             )
         return payload
 
-    def query_memories(self, user_id: str, query: str, limit: int = 5) -> List[Dict[str, Any]]:
+    def query_memories(self, user_id: str, query: str, limit: int = 5) -> list[dict[str, Any]]:
         tokens = [tok for tok in re.findall(r"\w+", query.lower()) if tok]
-        params: List[Any] = [user_id]
-        where_clauses: List[str] = ["user_id = ?"]
+        params: list[Any] = [user_id]
+        where_clauses: list[str] = ["user_id = ?"]
 
         if tokens:
             for tok in tokens:
@@ -304,7 +309,7 @@ class SQLiteMem0Client:
             rows = self._conn.execute(sql, params).fetchall()
         return [self._row_to_payload(row) for row in rows]
 
-    def summarize(self, texts: List[str], max_length: Optional[int] = None) -> str:
+    def summarize(self, texts: list[str], max_length: int | None = None) -> str:
         max_chars = max_length or self.max_summary_chars
         return _truncate(" ".join(texts), max_chars)
 
@@ -313,9 +318,9 @@ class SQLiteMem0Client:
             cur = self._conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
         return cur.rowcount > 0
 
-    def list_memories(self, user_id: Optional[str] = None, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    def list_memories(self, user_id: str | None = None, limit: int | None = None) -> list[dict[str, Any]]:
         query = "SELECT id, user_id, text, metadata, score FROM memories"
-        params: List[Any] = []
+        params: list[Any] = []
         if user_id:
             query += " WHERE user_id = ?"
             params.append(user_id)
@@ -335,9 +340,9 @@ class SQLiteMem0Client:
                 conn.close()
                 self._conn = None
 
-    def _row_to_payload(self, row: sqlite3.Row) -> Dict[str, Any]:
+    def _row_to_payload(self, row: sqlite3.Row) -> dict[str, Any]:
         metadata_str = row["metadata"]
-        metadata: Dict[str, Any]
+        metadata: dict[str, Any]
         if metadata_str:
             try:
                 metadata = json.loads(metadata_str)
@@ -387,12 +392,12 @@ class Mem0RemoteClient:
             raise ModuleNotFoundError("Mem0 SDK does not expose MemoryClient")
         if not self.api_key:
             raise ValueError("Mem0 SDK requires HIPPOCAMPUS_MEM0_API_KEY when remote backend is enabled")
-        kwargs: Dict[str, Any] = {"api_key": self.api_key}
+        kwargs: dict[str, Any] = {"api_key": self.api_key}
         if self.backend_url:
             kwargs["host"] = self.backend_url
         return client_cls(**kwargs)
 
-    def add_memory(self, user_id: str, text: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def add_memory(self, user_id: str, text: str, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
         messages = [{"role": "user", "content": text}]
         response = self._client.add(messages=messages, user_id=user_id, metadata=metadata)
         results = self._extract_results(response)
@@ -400,12 +405,12 @@ class Mem0RemoteClient:
             return results[0]
         return {"user_id": user_id, "text": text, "metadata": metadata or {}}
 
-    def query_memories(self, user_id: str, query: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    def query_memories(self, user_id: str, query: str, limit: int | None = None) -> list[dict[str, Any]]:
         top_k = limit or self.default_query_limit
         response = self._client.search(query=query, user_id=user_id, top_k=top_k, limit=top_k)
         return self._extract_results(response)
 
-    def delete_memory(self, memory_id: str) -> bool | Dict[str, Any]:
+    def delete_memory(self, memory_id: str) -> bool | dict[str, Any]:
         response = self._client.delete(memory_id=memory_id)
         if isinstance(response, dict):
             if "results" in response:
@@ -416,7 +421,7 @@ class Mem0RemoteClient:
             return {"deleted": deleted}
         return response
 
-    def list_memories(self, user_id: Optional[str] = None, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    def list_memories(self, user_id: str | None = None, limit: int | None = None) -> list[dict[str, Any]]:
         limit = limit or self.default_query_limit
         get_all = getattr(self._client, "get_all", None)
         if callable(get_all):
@@ -428,17 +433,17 @@ class Mem0RemoteClient:
             return self._extract_results(response)
         return []
 
-    def summarize(self, texts: List[str], max_length: Optional[int] = None) -> str:
+    def summarize(self, texts: list[str], max_length: int | None = None) -> str:
         return _truncate(" ".join(texts), max_length or self.summary_max_length)
 
-    def _extract_results(self, payload: Any) -> List[Dict[str, Any]]:
+    def _extract_results(self, payload: Any) -> list[dict[str, Any]]:
         if isinstance(payload, dict):
             results = payload.get("results") or []
         elif isinstance(payload, list):
             results = payload
         else:
             return []
-        parsed: List[Dict[str, Any]] = []
+        parsed: list[dict[str, Any]] = []
         for item in results:
             if not isinstance(item, dict):
                 continue
