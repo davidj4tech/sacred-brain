@@ -1,6 +1,6 @@
 # Sacred Brain Matrix maubot plugin
 
-Mention-triggered bot packaged as a maubot plugin. It forwards Matrix messages that mention the bot to Sacred Brain’s `/matrix/respond` endpoint and replies with the returned text.
+Mention-triggered bot packaged as a maubot plugin. It forwards Matrix messages to Sacred Brain’s `/matrix/respond` endpoint, replies with text, and can add TTS/STT for encrypted rooms.
 
 ## Build & upload
 1. Install maubot CLI (on your workstation): `pip install maubot`.
@@ -16,9 +16,14 @@ Mention-triggered bot packaged as a maubot plugin. It forwards Matrix messages t
 - `allow_rooms` optional allowlist of room IDs to listen in.
 - `persona` optional persona key forwarded to Sacred Brain (new).
 - `context_limit` (roughly replaces the hardcoded 20-message context from the old bot).
+- `autojoin_enabled` auto-accept room invites for the bot user.
+- `autojoin_allow_rooms` optional allowlist of room IDs for autojoin.
+- `autojoin_allow_senders` optional allowlist of inviter user IDs for autojoin.
 - `sacred_brain_url` (was `SACRED_BRAIN_URL`)
 - `api_key` (was `SACRED_BRAIN_API_KEY`)
 - `timeout_seconds` HTTP timeout (new safety guard).
+ - `tts_*` options mirror the old `BAIBOT_TTS_*` envs.
+ - `stt_*` options mirror the old `BAIBOT_STT_*` envs.
 
 The homeserver URL and access token/appservice are configured at the maubot host level per bot user, not inside this plugin.
 

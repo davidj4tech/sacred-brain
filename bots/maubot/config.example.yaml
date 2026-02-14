@@ -1,5 +1,6 @@
-# Text trigger that should be present in the message body
-mention: "@sacredbrain"
+# Text trigger that should be present in the message body.
+# In direct rooms (2 members), the bot responds even without a mention.
+mention: "@sam"
 
 # Optional allowlist of room IDs; leave empty to listen everywhere the bot user is present
 allow_rooms: []
@@ -8,13 +9,36 @@ allow_rooms: []
 persona: null
 
 # Number of recent messages to send as context (best-effort)
-context_limit: 10
+context_limit: 20
+
+# Auto-accept room invites for the bot user
+autojoin_enabled: true
+
+# Optional allowlists for invites
+autojoin_allow_rooms: []
+autojoin_allow_senders: []
 
 # Sacred Brain Matrix handler endpoint
-sacred_brain_url: "http://127.0.0.1:8000/matrix/respond"
+sacred_brain_url: "http://172.17.0.1:54321/matrix/respond"
 
 # Optional API key sent as X-API-Key header
 api_key: null
 
 # HTTP timeout when calling Sacred Brain
-timeout_seconds: 30
+timeout_seconds: 90
+
+# TTS config (LiteLLM OpenAI-compatible endpoint)
+tts_enabled: true
+tts_url: "http://172.17.0.1:4000/v1/audio/speech"
+tts_model: "gpt-4o-mini-tts"
+tts_voice: "shimmer"
+tts_format: "mp3"
+tts_api_key: null
+tts_timeout_seconds: 20
+
+# STT config (LiteLLM OpenAI-compatible endpoint)
+stt_enabled: true
+stt_url: "http://172.17.0.1:4000/v1/audio/transcriptions"
+stt_model: "whisper-1"
+stt_api_key: null
+stt_timeout_seconds: 20

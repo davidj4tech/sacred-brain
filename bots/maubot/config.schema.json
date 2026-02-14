@@ -4,7 +4,7 @@
   "properties": {
     "mention": {
       "type": "string",
-      "default": "@sacredbrain",
+      "default": "@sam",
       "description": "Text trigger the bot reacts to (e.g., @botname)."
     },
     "allow_rooms": {
@@ -24,9 +24,26 @@
       "default": 10,
       "description": "How many recent text messages to include as context (best-effort)."
     },
+    "autojoin_enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether the bot should auto-accept room invites."
+    },
+    "autojoin_allow_rooms": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "Optional allowlist of room IDs for autojoin; empty means any."
+    },
+    "autojoin_allow_senders": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "Optional allowlist of inviter user IDs for autojoin; empty means any."
+    },
     "sacred_brain_url": {
       "type": "string",
-      "default": "http://127.0.0.1:8000/matrix/respond",
+      "default": "http://172.17.0.1:54321/matrix/respond",
       "description": "Sacred Brain Matrix handler endpoint."
     },
     "api_key": {
@@ -39,6 +56,68 @@
       "minimum": 1,
       "default": 30,
       "description": "HTTP timeout when calling Sacred Brain."
+    },
+    "tts_enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether to send TTS audio replies."
+    },
+    "tts_url": {
+      "type": "string",
+      "default": "http://172.17.0.1:4000/v1/audio/speech",
+      "description": "TTS endpoint (OpenAI-compatible)."
+    },
+    "tts_model": {
+      "type": "string",
+      "default": "gpt-4o-mini-tts",
+      "description": "TTS model ID."
+    },
+    "tts_voice": {
+      "type": "string",
+      "default": "shimmer",
+      "description": "TTS voice name."
+    },
+    "tts_format": {
+      "type": "string",
+      "default": "mp3",
+      "description": "TTS audio format."
+    },
+    "tts_api_key": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Optional API key for the TTS endpoint."
+    },
+    "tts_timeout_seconds": {
+      "type": "number",
+      "minimum": 1,
+      "default": 20,
+      "description": "HTTP timeout when calling TTS."
+    },
+    "stt_enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether to transcribe audio messages."
+    },
+    "stt_url": {
+      "type": "string",
+      "default": "http://172.17.0.1:4000/v1/audio/transcriptions",
+      "description": "STT endpoint (OpenAI-compatible)."
+    },
+    "stt_model": {
+      "type": "string",
+      "default": "whisper-1",
+      "description": "STT model ID."
+    },
+    "stt_api_key": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Optional API key for the STT endpoint."
+    },
+    "stt_timeout_seconds": {
+      "type": "number",
+      "minimum": 1,
+      "default": 20,
+      "description": "HTTP timeout when calling STT."
     }
   },
   "required": ["sacred_brain_url"]
