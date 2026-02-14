@@ -15,13 +15,13 @@ This script reads a ChatGPT data export, uses an LLM to extract durable personal
 cd /opt/sacred-brain
 
 # 1. Preview what will be extracted (dry run)
-.venv/bin/python /opt/sam/scripts/import_chatgpt_to_hippocampus.py \
+.venv/bin/python scripts/import_chatgpt.py \
   --export /path/to/extracted-export-folder \
   --user david \
   --dry-run
 
 # 2. Import for real
-.venv/bin/python /opt/sam/scripts/import_chatgpt_to_hippocampus.py \
+.venv/bin/python scripts/import_chatgpt.py \
   --export /path/to/extracted-export-folder \
   --user david
 ```
@@ -59,7 +59,7 @@ The LLM is instructed to:
 Import a specific batch of conversations:
 ```bash
 # Process conversations 100-199
-.venv/bin/python /opt/sam/scripts/import_chatgpt_to_hippocampus.py \
+.venv/bin/python scripts/import_chatgpt.py \
   --export ~/exports/chatgpt-20260128 \
   --user david \
   --offset 100 \
@@ -68,7 +68,7 @@ Import a specific batch of conversations:
 
 Use a different model for extraction:
 ```bash
-.venv/bin/python /opt/sam/scripts/import_chatgpt_to_hippocampus.py \
+.venv/bin/python scripts/import_chatgpt.py \
   --export ~/exports/chatgpt-20260128 \
   --user david \
   --llm-model sam-deep
@@ -76,7 +76,7 @@ Use a different model for extraction:
 
 With Hippocampus API key:
 ```bash
-.venv/bin/python /opt/sam/scripts/import_chatgpt_to_hippocampus.py \
+.venv/bin/python scripts/import_chatgpt.py \
   --export ~/exports/chatgpt-20260128 \
   --user david \
   --hippo-key hippo_local_a58b583f7a844f0eb3bc02e58d56f5bd
