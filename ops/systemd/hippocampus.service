@@ -5,11 +5,23 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=/opt/sacred-brain
-Environment=HIPPOCAMPUS_CONFIG=/opt/sacred-brain/config/hippocampus.toml
+EnvironmentFile=/etc/sacred-brain/hippocampus.env
 ExecStart=/opt/sacred-brain/.venv/bin/uvicorn brain.hippocampus.app:app --host 0.0.0.0 --port 54321
 Restart=on-failure
 User=sacred
 Group=sacred
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/sacred-brain
+ReadOnlyPaths=/opt/sacred-brain /etc/sacred-brain
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
 
 [Install]
 WantedBy=multi-user.target

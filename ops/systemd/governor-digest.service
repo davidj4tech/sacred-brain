@@ -1,0 +1,23 @@
+[Unit]
+Description=Nightly Memory Governor digest to markdown
+After=memory-governor.service
+
+[Service]
+Type=oneshot
+User=sacred
+Group=sacred
+WorkingDirectory=/opt/sacred-brain
+ExecStart=/opt/sacred-brain/.venv/bin/python /opt/sam/scripts/governor_digest_to_markdown.py
+
+# Hardening (lighter for oneshot)
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/sam/memory
+ReadOnlyPaths=/opt/sacred-brain /opt/sam/scripts
+ProtectKernelTunables=true
+ProtectKernelModules=true
+
+[Install]
+WantedBy=multi-user.target

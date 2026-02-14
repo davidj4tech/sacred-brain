@@ -1,0 +1,60 @@
+[app]
+host = "0.0.0.0"
+port = 54321
+log_level = "INFO"
+allow_origins = ["*"]
+
+[auth]
+enabled = true
+header_name = "X-API-Key"
+api_keys = ["CHANGE_ME_hippo_api_key"]
+
+[summarizer]
+enabled = false
+provider = "litellm"
+model = "ollama:llama3"
+base_url = "http://localhost:11434"
+api_key = ""
+max_tokens = 512
+
+[mem0]
+enabled = true
+api_key = "CHANGE_ME_mem0_api_key"
+backend = "sqlite"
+backend_url = "http://localhost:8888"
+persistence_path = "/var/lib/sacred-brain/hippocampus/hippocampus_memories.sqlite"
+summary_max_length = 480
+query_limit = 5
+
+[agno]
+enabled = true
+model = "openai:gpt-4o-mini"
+base_url = ""
+api_key = ""
+system_prompt = "You are the Sacred Brain hippocampus, managing memories concisely."
+
+[notes]
+notes_dir = "/var/lib/sacred-brain/hippocampus/memories-denote"
+default_user = "default"
+
+[sam]
+enabled = false
+base_url = "http://127.0.0.1:4000"
+model = "gpt-4o-mini"
+api_key = ""
+reflection_enabled = true
+memory_context_max = 3
+memory_candidates_max = 8
+
+[sam.birth]
+timestamp = "2000-01-01T00:00:00"
+timezone = "UTC"
+location_name = ""
+latitude = 0.0
+longitude = 0.0
+
+[sam.astrology]
+enabled = false
+engine = "swisseph"
+signals_enabled = true
+cache_path = "/var/lib/sacred-brain/cache/sam_chart.json"

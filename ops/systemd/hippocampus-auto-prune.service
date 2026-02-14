@@ -7,8 +7,19 @@ Type=oneshot
 WorkingDirectory=/opt/sacred-brain
 User=sacred
 Group=sacred
-Environment=HIPPOCAMPUS_SQLITE_PATH=/opt/sacred-brain/data/hippocampus_memories.sqlite
+EnvironmentFile=/etc/sacred-brain/hippocampus.env
+Environment=HIPPOCAMPUS_SQLITE_PATH=/var/lib/sacred-brain/hippocampus/hippocampus_memories.sqlite
 ExecStart=/opt/sacred-brain/.venv/bin/python scripts/prune_auto_memories.py
+
+# Hardening (lighter for oneshot)
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/sacred-brain
+ReadOnlyPaths=/opt/sacred-brain /etc/sacred-brain
+ProtectKernelTunables=true
+ProtectKernelModules=true
 
 [Install]
 WantedBy=multi-user.target

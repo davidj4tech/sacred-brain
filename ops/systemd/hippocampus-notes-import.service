@@ -5,10 +5,20 @@ After=hippocampus.service
 [Service]
 Type=oneshot
 WorkingDirectory=/opt/sacred-brain
-Environment=PYTHONPATH=/opt/sacred-brain
-ExecStart=/opt/sacred-brain/.venv/bin/python scripts/mem0_org_sync.py import --dir data/memories-denote
 User=sacred
 Group=sacred
+Environment=PYTHONPATH=/opt/sacred-brain
+ExecStart=/opt/sacred-brain/.venv/bin/python scripts/mem0_org_sync.py import --dir /var/lib/sacred-brain/hippocampus/memories-denote
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/sacred-brain
+ReadOnlyPaths=/opt/sacred-brain
+ProtectKernelTunables=true
+ProtectKernelModules=true
 
 [Install]
 WantedBy=multi-user.target

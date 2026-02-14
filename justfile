@@ -89,6 +89,14 @@ security-audit:
     @systemd-analyze security hippocampus.service 2>/dev/null | tail -1
     @systemd-analyze security memory-governor.service 2>/dev/null | tail -1
 
+# Full install (user, dirs, config, systemd units, start services)
+install:
+    sudo ./scripts/install.sh
+
+# Update systemd units only (no user/dir/config changes)
+update-units:
+    sudo ./scripts/install.sh --update
+
 # Remove backward-compat symlinks from Phase 3 migration
 remove-compat-symlinks:
     sudo rm -f /opt/sacred-brain/data/hippocampus_memories.sqlite

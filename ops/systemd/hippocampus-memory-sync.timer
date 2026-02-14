@@ -1,0 +1,9 @@
+[Unit]
+Description=Daily sync of Sam memory files into Hippocampus
+
+[Timer]
+OnCalendar=*-*-* 03:35:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

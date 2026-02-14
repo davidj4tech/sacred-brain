@@ -1,17 +1,29 @@
 [Unit]
 Description=Memory Governor (Agno + Mem0) service
-After=network-online.target litellm-compose.service hippocampus.service hippocampus-ingest.service
+After=network-online.target litellm-compose.service hippocampus.service
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=memory-governor
-Group=memory-governor
+User=sacred
+Group=sacred
 WorkingDirectory=/opt/sacred-brain
-EnvironmentFile=/etc/memory-governor/memory-governor.env
+EnvironmentFile=/etc/sacred-brain/memory-governor.env
 ExecStart=/opt/sacred-brain/.venv/bin/python -m memory_governor.app
 Restart=always
 RestartSec=3
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/sacred-brain
+ReadOnlyPaths=/opt/sacred-brain /etc/sacred-brain
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
 
 [Install]
 WantedBy=multi-user.target

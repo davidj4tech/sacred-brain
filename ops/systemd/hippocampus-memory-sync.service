@@ -1,15 +1,16 @@
 [Unit]
-Description=Auto memory tuning for capture gating
-After=network.target
+Description=Sync markdown memory files into Hippocampus
+After=hippocampus.service
 
 [Service]
 Type=oneshot
-WorkingDirectory=/opt/sacred-brain
 User=sacred
 Group=sacred
+EnvironmentFile=/etc/sacred-brain/hippocampus.env
+Environment=MEMORY_SYNC_ROOT=/opt/sam
+Environment=HIPPOCAMPUS_USER_ID=sam
 Environment=HIPPOCAMPUS_SQLITE_PATH=/var/lib/sacred-brain/hippocampus/hippocampus_memories.sqlite
-Environment=AUTO_TUNE_PATH=/var/lib/sacred-brain/auto_memory_tuning.json
-ExecStart=/opt/sacred-brain/.venv/bin/python scripts/auto_memory_tuner.py
+ExecStart=/opt/sacred-brain/.venv/bin/python /opt/sacred-brain/scripts/memory_sync.py push
 
 # Hardening
 NoNewPrivileges=true
@@ -17,7 +18,7 @@ ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
 ReadWritePaths=/var/lib/sacred-brain
-ReadOnlyPaths=/opt/sacred-brain
+ReadOnlyPaths=/opt/sacred-brain /opt/sam /etc/sacred-brain
 ProtectKernelTunables=true
 ProtectKernelModules=true
 
