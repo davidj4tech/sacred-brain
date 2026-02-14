@@ -1,0 +1,27 @@
+services:
+  llamacpp:
+    image: ghcr.io/abetlen/llama-cpp-python:latest
+    platform: linux/arm64
+    container_name: llamacpp
+    restart: unless-stopped
+    command: >
+      /bin/sh -c "mkdir -p /app/llama_cpp/lib &&
+      cp /usr/local/lib/python3.13/site-packages/llama_cpp/lib/* /app/llama_cpp/lib/ &&
+      python3 -m llama_cpp.server
+      --host 0.0.0.0
+      --port 11435
+      --model /models/dolphin-phi-2.6b.Q4_K_M.gguf
+      --n_ctx 512
+      --n_batch 32
+      --n_threads 4"
+    volumes:
+      - /srv/models:/models:ro
+    ports:
+      - "11435:8000"
+    healthcheck:
+      test:
+        ["CMD-SHELL", "python3 -c \"import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/v1/models').status==200 else 1)\""]
+      interval: 60s
+      timeout: 10s
+      retries: 5
+      start_period: 120s

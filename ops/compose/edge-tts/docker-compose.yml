@@ -1,0 +1,10 @@
+services:
+  edge-tts:
+    build: .
+    container_name: edge-tts
+    restart: unless-stopped
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    ports:
+      - "5050:5050"

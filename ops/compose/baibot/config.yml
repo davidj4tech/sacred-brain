@@ -63,12 +63,18 @@ agents:
 
 initial_global_config:
   handler:
-    catch_all: static/litellm
-    text_generation: static/litellm
+    # Disable unsolicited chat replies (this was causing @sam:ryer.org to respond in every room).
+    # Keep TTS/STT handlers available for explicit commands.
+    catch_all: null
+    text_generation: null
     text_to_speech: static/litellm
     speech_to_text: static/litellm
     image_generation: null
+  # Restrict Baibot processing to specific users (commands-only intent).
+  # NOTE: Baibot commands use command_prefix (!bai) so this keeps the bot from
+  # replying to general room chatter from other users.
   user_patterns:
-    - "@*:ryer.org"
+    - "@david:ryer.org"
+    - "@ryer:ryer.org"
 
 logging: warn,mxlink=debug,baibot=debug

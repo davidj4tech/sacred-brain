@@ -1,11 +1,27 @@
 services:
   litellm:
-    build: .
     image: litellm-proxy:1.80.8
     # To bump: update pip version in Dockerfile after verifying release notes.
     container_name: litellm-proxy
     restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen(http://127.0.0.1:4000/v1/models, timeout=3).read(); print(ok)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     network_mode: "bridge"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     ports:
       - "4000:4000"
     env_file:
@@ -13,3 +29,5 @@ services:
     volumes:
       - /opt/sacred-brain/ops/litellm/config.yaml:/app/config.yaml:ro
     command: ["--config", "/app/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
+    mem_limit: 4g
+    cpus: "2.0"

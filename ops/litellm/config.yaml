@@ -1,4 +1,8 @@
 model_list:
+  - model_name: gemini-1.5-pro
+    litellm_params:
+      model: gemini/gemini-1.5-pro
+      api_key: os.environ/GEMINI_API_KEY
   - model_name: "gpt-4o-mini"
     litellm_params:
       model: "openai/gpt-4o-mini"
@@ -9,11 +13,99 @@ model_list:
     litellm_params:
       model: "ollama/llama3"
       api_base: "http://localhost:11434"
+  - model_name: "sam-fast"
+    litellm_params:
+      model: "/models/dolphin-phi-2.6b.Q4_K_M.gguf"
+      custom_llm_provider: "openai"
+      api_base: "http://172.17.0.1:11435/v1"
+      temperature: 0.25
+      top_p: 0.85
+      repeat_penalty: 1.05
+      max_tokens: 64
+      stream: false
+  - model_name: "sam-fast-remote"
+    litellm_params:
+      model: "deepseek-r1-7b"
+      custom_llm_provider: "openai"
+      api_base: "https://llm.ryer.org/v1"
+      api_key: "sk-any"
+      temperature: 0.7
+      top_p: 0.9
+      # R1-style models need headroom for <think> + final answer.
+      max_tokens: 2048
+      stream: false
+  - model_name: "sam-r1-colab"
+    litellm_params:
+      # Point this at your public llama.cpp OpenAI-compatible endpoint (must expose /v1).
+      # Example: "https://<your-ngrok-or-cloudflared-host>/v1"
+      model: "deepseek.gguf"
+      custom_llm_provider: "openai"
+      api_base: "https://aebcd72dbebe.ngrok-free.app/v1"
+      # llama.cpp servers typically don't enforce auth unless started with an API key.
+      # Set a harmless per-model key here so LiteLLM doesn't forward real provider keys.
+      api_key: "sk-any"
+      temperature: 0.25
+      top_p: 0.9
+      max_tokens: 256
+      stream: false
+      #   - model_name: "sam-fast-remote"
+      #    litellm_params:
+      #      model: "aeline/phil:latest"
+      #      custom_llm_provider: "openai"
+      #      api_base: "https://stirred-giving-whale.ngrok-free.app/v1"
+      #      temperature: 0.25
+      #      top_p: 0.9
+      #      max_tokens: 64
+      #      stream: false
+  - model_name: "sam-code"
+    litellm_params:
+      model: "/models/dolphin-phi-2.6b.Q4_K_M.gguf"
+      custom_llm_provider: "openai"
+      api_base: "http://172.17.0.1:11435/v1"
+      temperature: 0.25
+      top_p: 0.85
+      repeat_penalty: 1.05
+      max_tokens: 16
+      stream: false
+  - model_name: "sam-deep"
+    litellm_params:
+      model: "openai/gpt-4o"
+  - model_name: "sam-local"
+    litellm_params:
+      model: "/models/dolphin-phi-2.6b.Q4_K_M.gguf"
+      custom_llm_provider: "openai"
+      api_base: "http://172.17.0.1:11435/v1"
+      temperature: 0.25
+      top_p: 0.85
+      repeat_penalty: 1.05
+      max_tokens: 16
+      stream: false
+  - model_name: "sam-creative"
+    litellm_params:
+      model: "ollama/gemma3:4b"
+      api_base: "http://172.17.0.1:11434"
+  - model_name: "sam-vision"
+    litellm_params:
+      model: "ollama/qwen3-vl:2b"
+      api_base: "http://172.17.0.1:11434"
+  - model_name: "sam-router"
+    litellm_params:
+      model: "ollama/qwen3:0.6b"
+      api_base: "http://172.17.0.1:11434"
+  - model_name: "gpt-4o-mini-tts"
+    litellm_params:
+      model: "openai/gpt-4o-mini-tts"
+  - model_name: "whisper-1"
+    litellm_params:
+      model: "openai/whisper-1"
 
 # Optional routing/policy placeholders; fill as needed.
 general_settings:
-  # max_budget: 0.0
-  # timeout: 60
+  max_budget: 20.0
+  timeout: 90
+  fallbacks:
+    - model: "sam-fast"
+      fallback_models: ["gpt-4o-mini"]
   # fallbacks: []
   # cache: false
   # mock_responses: false

@@ -1,0 +1,43 @@
+# Config for mautrix-gmessages appservice bridge.
+
+homeserver:
+  address: https://matrix.ryer.org
+  domain: ryer.org
+
+appservice:
+  address: http://mautrix-gmessages:29320
+  hostname: 0.0.0.0
+  port: 29320
+  id: gmessages-bridge
+  bot:
+    username: smsbot
+    displayname: SMS bot
+  as_token: REPLACE_ME
+  hs_token: REPLACE_ME
+
+bridge:
+  command_prefix: "!sms"
+  bridge_notices: false
+  permissions:
+    "@you:ryer.org": admin
+    "ryer.org": user
+
+database:
+  type: postgres
+  uri: postgres://matrix:REPLACE_ME@postgres/gmessages?sslmode=disable
+
+logging:
+  handlers:
+    file:
+      class: logging.handlers.RotatingFileHandler
+      formatter: normal
+      filename: /data/logs/bridge.log
+      maxBytes: 10485760
+      backupCount: 5
+  loggers:
+    mautrix:
+      level: INFO
+      handlers: [file]
+    root:
+      level: INFO
+      handlers: [file]

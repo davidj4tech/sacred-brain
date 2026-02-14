@@ -1,0 +1,12 @@
+services:
+  mautrix-meta:
+    image: dock.mau.dev/mautrix/meta:latest
+    container_name: mautrix-meta
+    restart: unless-stopped
+    user: "1000:1000"
+    volumes:
+      - ./:/data
+    ports:
+      - "29319:29319"
+    environment:
+      - TZ=UTC

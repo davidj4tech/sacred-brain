@@ -1,0 +1,14 @@
+version: "3.8"
+
+services:
+  mautrix-gmessages:
+    image: dock.mau.dev/mautrix/gmessages:latest
+    container_name: mautrix-gmessages
+    restart: unless-stopped
+    user: "1000:1000"
+    volumes:
+      - ./:/data
+    ports:
+      - "29320:29320"
+    environment:
+      - TZ=UTC

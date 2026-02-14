@@ -9,5 +9,7 @@ services:
       MAUBOT_EXTRA_PIP_PACKAGES: httpx
     ports:
       - "29316:29316"
+    extra_hosts:
+      - "matrix.ryer.org:host-gateway"
     volumes:
       - ./maubot-data:/data
