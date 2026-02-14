@@ -105,3 +105,44 @@ sudo systemctl enable --now memory-governor-consolidate.timer
 - Queue backlog: check `var/memory-governor/durable.spool`
 - Logs: `journalctl -u memory-governor.service -f`
 - Hippocampus reachability: `curl -G -H "X-API-Key: $HIPPOCAMPUS_API_KEY" --data-urlencode 'query=test' http://127.0.0.1:54321/memories/test`
+
+### Full pipeline health check
+```bash
+# 1. All three services must be running
+sudo systemctl status hippocampus hippocampus-ingest memory-governor
+
+# 2. Health endpoints
+curl -s http://127.0.0.1:54321/health   # Hippocampus
+curl -s http://127.0.0.1:54323/health   # Memory Governor
+
+# 3. End-to-end write + recall test
+curl -s -X POST http://127.0.0.1:54323/remember \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"test","text":"pipeline smoke test","source":"smoke","kind":"episodic","scope":{"kind":"global","id":"test"}}'
+
+sleep 2
+
+curl -s -X POST http://127.0.0.1:54323/recall \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"test","query":"pipeline smoke test","k":3}'
+```
+
+### Known failure modes
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `/recall` returns empty `{"results":[]}` | Hippocampus (54321) is down | `sudo systemctl start hippocampus` |
+| `/observe` or `/remember` returns 500 | State DB not writable by `memory-governor` user | `sudo chown -R memory-governor:memory-governor /opt/sacred-brain/var/memory-governor/` |
+| `/remember` returns 200 but memory never appears in `/recall` | Worker not forwarding jobs to Hippocampus (check logs for write confirmation) | Check `journalctl -u memory-governor -f` for "Memory written to Hippocampus" after a `/remember` call |
+| Ingest returns 200 but Hippocampus never receives POST | Hippocampus (54321) down; ingest forwards silently fail | `sudo systemctl start hippocampus` |
+
+### Service dependency order
+```
+hippocampus (54321)       ← must be running first
+  ↑
+hippocampus-ingest (54322) ← forwards to hippocampus
+  ↑
+memory-governor (54323)    ← writes via ingest, queries hippocampus directly
+```
+
+Systemd `After=` in `memory-governor.service` already declares this ordering, but note that `Restart=always` on the governor does not guarantee hippocampus is healthy — only that the governor process restarts.

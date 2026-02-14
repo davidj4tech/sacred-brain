@@ -44,6 +44,12 @@ shared with other assistants (e.g., ChatGPT) for continuity.
    - `Mem0Adapter` now routes through the remote backend when enabled and automatically falls back to the in-memory store if the SDK/import fails or runtime calls error out.
    - Expanded tests and docs to describe the self-hosted expectation, fallback strategy, and optional SQLite mode.
 
+7. **Code Quality & Refactoring**
+   - Introduced `ruff` and `mypy` for linting and type checking (configured in `pyproject.toml`).
+   - Refactored `matrix_respond` logic into a dedicated `BotRouter` class (`brain/hippocampus/bot_router.py`), simplifying `app.py`.
+   - Enhanced `Mem0Adapter` error handling to distinguish between configuration errors (missing SDK) and connection issues.
+   - Added comprehensive tests for `BotRouter` covering Sam, Agno, and fallback summarization strategies.
+
 ## Extra Feature Added During Session
 - Implemented memory deletion flow (`DELETE /memories/{memory_id}`) and updated
   docs/tests to keep the API complete.

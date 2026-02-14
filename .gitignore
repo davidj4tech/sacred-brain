@@ -6,3 +6,7 @@ __pycache__/
 pytest_cache/
 .DS_Store
 data/
+ops/compose/mautrix-meta/config.yaml
+ops/compose/mautrix-meta/registration.yaml
+ops/compose/mautrix-meta/*.db
+ops/compose/mautrix-meta/logs/

@@ -13,6 +13,7 @@ simple HTTP endpoints for storing, querying, and summarising memories.
 - Automatically falls back to the local in-memory store (or optional SQLite mode) when Mem0 is unreachable.
 - Minimal configuration via TOML + environment variables.
 - Ready-to-run with `uvicorn`, includes tests and ops scaffolding.
+- Optional “bias signals” for Sam via astrology metadata (see `docs/SAM_ASTROLOGY.md`).
 
 ## Getting Started
 
@@ -70,6 +71,8 @@ pytest
 - `ops/scripts/dev_run.sh` starts the app with sensible defaults.
 - `ops/systemd/hippocampus.service` can be dropped into `/etc/systemd/system`
   as a starting point for Raspberry Pi deployments.
+- `ops/systemd/baibot-compose.service` + `ops/compose/baibot/docker-compose.yml`
+  run a local TTS/STT helper (see `docs/BAIBOT.md`).
 - `ops/mem0/prepare_mem0_source.sh` clones/updates the official Mem0 repo into
   `ext/mem0`. Use the upstream `ext/mem0/server/docker-compose.yaml` to launch
   Mem0 + Postgres + Neo4j (see `docs/MEM0_SELF_HOSTING.md` for commands).
@@ -116,6 +119,14 @@ will route through the Agno agent when available; otherwise it uses the direct
 summariser fallback. You’ll need the model-specific dependencies (e.g., `openai`
 or `ollama`) installed for the chosen `[agno].model` provider.
 
+## Sam LLM (optional)
+
+Sam’s LLM client is configured via env vars (see `docs/SAM_LLM.md`). For direct
+providers with different model IDs per endpoint, you can set
+`SAM_LLM_MODEL_MAP` to a JSON map of `base_url` → `model` (for example,
+`{"https://llm.ryer.org/v1":"/content/models/deepseek.gguf"}`). `SAM_LLM_MODEL`
+still overrides the map when set.
+
 ## Org-roam / Denote bridge
 
 Export all Mem0 memories into Denote-compatible Org files (usable by
@@ -136,7 +147,7 @@ not duplicate. See `docs/MEM0_ORG_ROAM.md` for the format and options.
 
 ## Logging to Hippocampus
 - Client-agnostic logging examples (curl/Python) are in `docs/LOGGING_TO_HIPPOCAMPUS.md`.
-- OpenWebUI-specific auto-logging is deprecated (legacy webhook remains for compatibility).
+- OpenWebUI-specific auto-logging webhook is removed; use `/ingest`.
 
 ## Memory Governor
 
@@ -151,7 +162,12 @@ See `docs/MEMORY_GOVERNOR.md` for the Agno/Mem0-based decision layer in front of
 
 ## Matrix Bot
 
-See `bots/matrix/MENTION_BOT.md` for setup.
+See `bots/matrix/MENTION_BOT.md` for setup (matrix-nio mention/DM bot with optional TTS/STT).
+
+## Matrix Bridges
+
+Binary installs live in `/opt/mautrix-*` with configs in `/etc/matrix-bridges` and data/logs in
+`/var/lib/mautrix-*`. See `docs/MATRIX_BRIDGES.md` for the bridge layout and Synapse integration.
 ## Codex Session Memory
 
 Use `scripts/codex_log.py` to append major decisions so future Codex sessions can restore context. Example:

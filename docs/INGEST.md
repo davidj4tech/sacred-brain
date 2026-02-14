@@ -1,10 +1,8 @@
 # Hippocampus Ingestion Service
 
 Generic HTTP ingestion endpoint to log events/messages into Hippocampus, without
-tying to a specific client. Two routes are available:
-
+tying to a specific client. Route:
 - `POST /ingest` – simple, client-agnostic payload.
-- `POST /webhook` – legacy OpenWebUI-compatible payload.
 
 ## Payloads
 
@@ -21,20 +19,6 @@ tying to a specific client. Two routes are available:
   }
 }
 ```
-
-### /webhook (legacy OpenWebUI)
-```json
-{
-  "conversation_id": "abc",
-  "message_id": "msg-123",
-  "user_id": "alice",
-  "sender": "alice",
-  "role": "user",
-  "content": "hello world",
-  "metadata": {}
-}
-```
-Assistant-role messages are ignored by default.
 
 ## Running
 
@@ -59,6 +43,5 @@ curl -X POST http://localhost:54322/ingest \
 
 ## Systemd
 
-Use the `hippocampus-webhook.service` unit (compat/legacy name) or create a new
-unit pointing to `ingest.hippocampus_ingest:app`. Set the port and env vars as
+Use a systemd unit pointing to `ingest.hippocampus_ingest:app`. Set the port and env vars as
 needed; see README or existing unit examples for pattern.
