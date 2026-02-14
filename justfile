@@ -35,7 +35,7 @@ health:
 
 # Show timer status
 timers:
-    @systemctl list-timers hippocampus-auto-prune.timer memory-governor-consolidate.timer governor-digest.timer --no-pager
+    @systemctl list-timers hippocampus-auto-prune.timer memory-governor-consolidate.timer governor-digest.timer hippocampus-memory-sync.timer --no-pager
 
 # Full backup to /root/
 backup:
