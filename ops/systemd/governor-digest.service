@@ -7,7 +7,10 @@ Type=oneshot
 User=sacred
 Group=sacred
 WorkingDirectory=/opt/sacred-brain
-ExecStart=/opt/sacred-brain/.venv/bin/python /opt/sam/scripts/governor_digest_to_markdown.py
+Environment=MG_USER_ID=sam
+Environment=DIGEST_OUTPUT_DIR=/opt/sam/memory/memory
+Environment=MG_TZ_OFFSET_HOURS=11
+ExecStart=/opt/sacred-brain/.venv/bin/python /opt/sacred-brain/scripts/governor_digest.py
 
 # Hardening (lighter for oneshot)
 NoNewPrivileges=true
@@ -15,7 +18,7 @@ ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
 ReadWritePaths=/opt/sam/memory
-ReadOnlyPaths=/opt/sacred-brain /opt/sam/scripts
+ReadOnlyPaths=/opt/sacred-brain
 ProtectKernelTunables=true
 ProtectKernelModules=true
 
