@@ -15,7 +15,11 @@ import datetime as dt
 import re
 import textwrap
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from brain.hippocampus.config import HippocampusSettings, load_settings
 from brain.hippocampus.mem0_adapter import Mem0Adapter
@@ -63,8 +67,8 @@ def export_memories(
     adapter: Mem0Adapter,
     settings: HippocampusSettings,
     notes_dir: Path,
-    user_id: Optional[str],
-    limit: Optional[int],
+    user_id: str | None,
+    limit: int | None,
 ) -> None:
     existing = _index_existing_notes(notes_dir)
     records = adapter.list_memories(user_id=user_id, limit=limit)
@@ -85,7 +89,7 @@ def import_notes(
     adapter: Mem0Adapter,
     settings: HippocampusSettings,
     notes_dir: Path,
-    default_user: Optional[str],
+    default_user: str | None,
 ) -> None:
     for path in sorted(notes_dir.glob("*.org")):
         properties, body = parse_org_file(path)
@@ -96,7 +100,10 @@ def import_notes(
         if mem0_id:
             continue
 
-        experience = ExperienceCreate(user_id=user_id, text=body.strip(), metadata=_properties_to_metadata(properties))
+        clean_body = body.strip()
+        if not clean_body:
+            continue
+        experience = ExperienceCreate(user_id=user_id, text=clean_body, metadata=_properties_to_metadata(properties))
         record = adapter.add_experience(experience)
         properties["MEM0_ID"] = record.id
         properties["ID"] = record.id
@@ -104,8 +111,8 @@ def import_notes(
         path.write_text(updated, encoding="utf-8")
 
 
-def _index_existing_notes(notes_dir: Path) -> Dict[str, str]:
-    mapping: Dict[str, str] = {}
+def _index_existing_notes(notes_dir: Path) -> dict[str, str]:
+    mapping: dict[str, str] = {}
     for path in notes_dir.glob("*.org"):
         props, _ = parse_org_file(path)
         mem_id = props.get("MEM0_ID") or props.get("ID")
@@ -114,11 +121,11 @@ def _index_existing_notes(notes_dir: Path) -> Dict[str, str]:
     return mapping
 
 
-def parse_org_file(path: Path) -> Tuple[Dict[str, str], str]:
+def parse_org_file(path: Path) -> tuple[dict[str, str], str]:
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines()
-    properties: Dict[str, str] = {}
-    body_lines: List[str] = []
+    properties: dict[str, str] = {}
+    body_lines: list[str] = []
     in_properties = False
     for line in lines:
         if line.strip().startswith(":PROPERTIES:"):
@@ -140,8 +147,8 @@ def parse_org_file(path: Path) -> Tuple[Dict[str, str], str]:
 def render_org_note(
     record,
     default_user: str,
-    extra_properties: Optional[Dict[str, str]] = None,
-    body_override: Optional[str] = None,
+    extra_properties: dict[str, str] | None = None,
+    body_override: str | None = None,
 ) -> str:
     tags = record.metadata.get("tags") if hasattr(record, "metadata") else {}
     if isinstance(tags, dict):
@@ -179,7 +186,7 @@ def render_org_note(
     return "\n".join([header, properties_block, ":END:", "", body_text.strip(), ""])
 
 
-def _properties_to_metadata(properties: Dict[str, str]) -> Dict[str, str]:
+def _properties_to_metadata(properties: dict[str, str]) -> dict[str, str]:
     metadata = dict(properties)
     metadata.pop("MEM0_ID", None)
     metadata.pop("ID", None)

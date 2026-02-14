@@ -20,17 +20,16 @@ import json
 import os
 import sqlite3
 from pathlib import Path
-from typing import Dict, List, Tuple
 
 DEFAULT_DB = Path(__file__).resolve().parents[1] / "data" / "hippocampus_memories.sqlite"
 DB_PATH = Path(os.getenv("HIPPOCAMPUS_SQLITE_PATH", DEFAULT_DB))
 TUNE_PATH = Path(os.getenv("AUTO_TUNE_PATH", "var/auto_memory_tuning.json"))
 
 
-def load_auto_rows(conn: sqlite3.Connection) -> List[sqlite3.Row]:
+def load_auto_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     conn.row_factory = sqlite3.Row
     rows = conn.execute("SELECT user_id, metadata, created_at FROM memories").fetchall()
-    autos: List[sqlite3.Row] = []
+    autos: list[sqlite3.Row] = []
     for row in rows:
         meta_raw = row["metadata"]
         try:
@@ -42,14 +41,19 @@ def load_auto_rows(conn: sqlite3.Connection) -> List[sqlite3.Row]:
     return autos
 
 
-def pressure(rows: List[sqlite3.Row]) -> Tuple[int, float]:
-    now = dt.datetime.now(dt.timezone.utc)
+def pressure(rows: list[sqlite3.Row]) -> tuple[int, float]:
+    now = dt.datetime.now(dt.UTC)
     count = len(rows)
     ages = []
     for row in rows:
         ts = row["created_at"]
         try:
-            ts_dt = dt.datetime.fromisoformat(ts)
+            if isinstance(ts, (int, float)):
+                ts_dt = dt.datetime.fromtimestamp(ts, dt.UTC)
+            else:
+                ts_dt = dt.datetime.fromisoformat(str(ts))
+            if ts_dt.tzinfo is None:
+                ts_dt = ts_dt.replace(tzinfo=dt.UTC)
         except Exception:
             ts_dt = now
         ages.append((now - ts_dt).total_seconds() / 86400)
@@ -58,7 +62,7 @@ def pressure(rows: List[sqlite3.Row]) -> Tuple[int, float]:
     return count, score
 
 
-def tune(count: int, score: float) -> Dict[str, object]:
+def tune(count: int, score: float) -> dict[str, object]:
     if score > 300 or count > 250:
         return {"min_words": 6, "llm_strict": True, "llm_enabled": True}
     if score < 120:
