@@ -23,3 +23,9 @@ codex-resume.txt
 
 # Secrets
 .env.*
+
+# One-off files
+1.1.sacred-brain-hippocampus.md
+SESSION_RESUME.md
+tune_llama.sh
+ext/
