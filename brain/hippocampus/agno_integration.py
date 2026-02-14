@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Iterable, Optional
+from collections.abc import Iterable
+from typing import Any
 
 from .config import AgnoSettings
 from .mem0_adapter import Mem0Adapter
@@ -40,7 +41,7 @@ def build_agno_agent(
     )
 
     @tool(name="store_memory", description="Store a memory for a user with optional metadata.")
-    def store_memory(user_id: str, text: str, metadata: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    def store_memory(user_id: str, text: str, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
         experience = ExperienceCreate(user_id=user_id, text=text, metadata=metadata or {})
         record = adapter.add_experience(experience)
         return _record_to_dict(record)

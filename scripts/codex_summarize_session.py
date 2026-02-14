@@ -6,8 +6,8 @@ import argparse
 import re
 import sys
 from collections import deque
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 ROOT = Path(__file__).resolve().parents[1]
 LOG_DIR = ROOT / ".codex"

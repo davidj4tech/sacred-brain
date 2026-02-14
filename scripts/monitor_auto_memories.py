@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import sqlite3
-from collections import defaultdict
 
 DB_PATH = os.getenv("HIPPOCAMPUS_SQLITE_PATH", "data/hippocampus_memories.sqlite")
 

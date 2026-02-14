@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Optional
 
 
 @dataclass
@@ -23,7 +22,7 @@ def _fallback_sun_sign(timestamp: str) -> str:
     return "Unknown"
 
 
-def get_chart(birth: BirthInfo, cache_path: Path, engine: str = "fallback") -> Dict:
+def get_chart(birth: BirthInfo, cache_path: Path, engine: str = "fallback") -> dict:
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     if cache_path.exists():
         try:
@@ -31,7 +30,7 @@ def get_chart(birth: BirthInfo, cache_path: Path, engine: str = "fallback") -> D
         except Exception:
             pass
 
-    chart: Dict[str, str] = {}
+    chart: dict[str, str] = {}
     if engine == "swisseph":
         try:
             import swisseph as swe  # type: ignore
@@ -72,9 +71,9 @@ def get_chart(birth: BirthInfo, cache_path: Path, engine: str = "fallback") -> D
     return chart
 
 
-def get_signals(chart: Dict) -> Dict[str, str]:
+def get_signals(chart: dict) -> dict[str, str]:
     sun = chart.get("sun_sign", "")
-    signals: Dict[str, str] = {}
+    signals: dict[str, str] = {}
     if sun == "Sagittarius":
         signals.update(
             {
@@ -87,7 +86,7 @@ def get_signals(chart: Dict) -> Dict[str, str]:
     return signals
 
 
-def render_bias_note(signals: Dict[str, str]) -> str:
+def render_bias_note(signals: dict[str, str]) -> str:
     if not signals:
         return ""
     notes = []

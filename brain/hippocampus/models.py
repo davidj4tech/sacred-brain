@@ -1,22 +1,23 @@
 """Pydantic models for the hippocampus API."""
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
 class ExperienceCreate(BaseModel):
     user_id: str = Field(..., description="Who generated the experience")
     text: str = Field(..., min_length=1, description="Raw text to store")
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class MemoryRecord(BaseModel):
     id: str
     user_id: str
     text: str
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-    score: Optional[float] = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    score: float | None = None
 
 
 class MemoryCreateResponse(BaseModel):
@@ -24,7 +25,7 @@ class MemoryCreateResponse(BaseModel):
 
 
 class MemoryQueryResponse(BaseModel):
-    memories: List[MemoryRecord]
+    memories: list[MemoryRecord]
 
 
 class MemoryDeleteResponse(BaseModel):
@@ -32,7 +33,7 @@ class MemoryDeleteResponse(BaseModel):
 
 
 class SummarizeRequest(BaseModel):
-    texts: List[str] = Field(..., min_length=1)
+    texts: list[str] = Field(..., min_length=1)
 
 
 class SummaryResponse(BaseModel):
@@ -47,7 +48,7 @@ class MatrixRelayRequest(BaseModel):
     room_id: str
     sender: str
     body: str
-    context: List[str] = Field(default_factory=list)
+    context: list[str] = Field(default_factory=list)
 
 
 class MatrixRelayResponse(BaseModel):

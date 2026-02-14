@@ -4,7 +4,6 @@ from brain.hippocampus.app import create_app
 from brain.hippocampus.config import AppSettings, AuthSettings, HippocampusSettings, Mem0Settings
 from brain.hippocampus.mem0_adapter import InMemoryMem0Client, Mem0Adapter
 
-
 TEST_API_KEY = "test-api-key"
 TEST_AUTH_HEADER = "X-API-Key"
 

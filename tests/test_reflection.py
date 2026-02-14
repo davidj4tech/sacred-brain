@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 from brain.hippocampus.reflection import reflection_pass
 
 

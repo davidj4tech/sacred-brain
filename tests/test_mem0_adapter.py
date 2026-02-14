@@ -1,8 +1,8 @@
 from brain.hippocampus.mem0_adapter import (
     InMemoryMem0Client,
     Mem0Adapter,
-    SQLiteMem0Client,
     Mem0RemoteClient,
+    SQLiteMem0Client,
 )
 from brain.hippocampus.models import ExperienceCreate
 

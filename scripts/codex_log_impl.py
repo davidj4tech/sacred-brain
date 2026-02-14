@@ -1,8 +1,10 @@
 from __future__ import annotations
+
 import argparse
 import datetime as dt
 import os
 from pathlib import Path
+
 import httpx
 
 ROOT = Path(__file__).resolve().parents[1]

@@ -5,7 +5,7 @@ import sqlite3
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from memory_governor.mem_policy import canonicalize_memory
 from memory_governor.schemas import ObserveRequest, Scope
@@ -120,7 +120,7 @@ class WorkingStore:
             conn.execute("DELETE FROM working_events WHERE ts < ?", (cutoff,))
             conn.commit()
 
-    def recent_for_scope(self, scope: Scope, limit: int = 100) -> List[Dict[str, Any]]:
+    def recent_for_scope(self, scope: Scope, limit: int = 100) -> list[dict[str, Any]]:
         with sqlite3.connect(self.db_path) as conn:
             rows = conn.execute(
                 """
@@ -161,7 +161,7 @@ class WorkingStore:
             )
             conn.commit()
 
-    def consolidated_cursor(self, scope: Scope) -> Optional[int]:
+    def consolidated_cursor(self, scope: Scope) -> int | None:
         scope_key = _scope_key(scope)
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(
@@ -176,7 +176,7 @@ class StreamLog:
         self.ttl_days = ttl_days
         path.parent.mkdir(parents=True, exist_ok=True)
 
-    def append(self, record: Dict[str, Any]) -> None:
+    def append(self, record: dict[str, Any]) -> None:
         ts = int(record.get("timestamp") or time.time())
         record["timestamp"] = ts
         with self.path.open("a", encoding="utf-8") as f:
@@ -187,7 +187,7 @@ class StreamLog:
             return
         cutoff = int(time.time() - self.ttl_days * 86400)
         lines = self.path.read_text(encoding="utf-8").splitlines()
-        kept: List[str] = []
+        kept: list[str] = []
         for line in lines:
             try:
                 obj = json.loads(line)
@@ -204,7 +204,7 @@ class DurableQueue:
     def __init__(self, spool_path: Path) -> None:
         self.spool_path = spool_path
         spool_path.parent.mkdir(parents=True, exist_ok=True)
-        self.backlog: List[Dict[str, Any]] = []
+        self.backlog: list[dict[str, Any]] = []
         self._load()
 
     def _load(self) -> None:
@@ -222,13 +222,13 @@ class DurableQueue:
         lines = [json.dumps(item) for item in self.backlog]
         self.spool_path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
 
-    def enqueue(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def enqueue(self, payload: dict[str, Any]) -> dict[str, Any]:
         job = {"id": str(uuid.uuid4()), "payload": payload, "ts": int(time.time())}
         self.backlog.append(job)
         self._persist()
         return job
 
-    def pending(self) -> List[Dict[str, Any]]:
+    def pending(self) -> list[dict[str, Any]]:
         return list(self.backlog)
 
     def mark_done(self, job_id: str) -> None:

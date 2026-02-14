@@ -4,12 +4,13 @@ from __future__ import annotations
 import asyncio
 import time
 from collections import OrderedDict
-from typing import Any, Dict, Optional
+from typing import Any
 
 import aiohttp
-from maubot import MessageEvent, Plugin
 from maubot.handlers import event
-from mautrix.types import EventType, MessageType, RoomID
+from mautrix.types import EventType, MessageType
+
+from maubot import MessageEvent, Plugin
 
 
 class Deduper:
@@ -107,7 +108,7 @@ class IngestPlugin(Plugin):
                     await evt.react("✅")
                 if resp.status >= 400:
                     self.log.warning("Ingest failed (%s): %s", resp.status, await resp.text())
-        except asyncio.TimeoutError:
+        except TimeoutError:
             self.log.warning("Ingest timed out for event %s", evt.event_id)
         except Exception as exc:  # pragma: no cover - defensive
             self.log.exception("Ingest error for event %s: %s", evt.event_id, exc)
@@ -131,7 +132,7 @@ class IngestPlugin(Plugin):
                 else:
                     self.log.warning("Remember failed (%s): %s", resp.status, await resp.text())
                     await evt.reply("Failed to store.")
-        except asyncio.TimeoutError:
+        except TimeoutError:
             await evt.reply("Governor timeout.")
         except Exception as exc:  # pragma: no cover - defensive
             self.log.exception("Governor remember error: %s", exc)
@@ -164,15 +165,15 @@ class IngestPlugin(Plugin):
                     kind = item.get("kind") or ""
                     lines.append(f"- {txt} ({kind})" if kind else f"- {txt}")
                 await evt.reply("\n".join(lines))
-        except asyncio.TimeoutError:
+        except TimeoutError:
             await evt.reply("Governor timeout.")
         except Exception as exc:  # pragma: no cover - defensive
             self.log.exception("Governor recall error: %s", exc)
             await evt.reply("Error recalling.")
 
 
-def _build_metadata(evt: MessageEvent) -> Dict[str, Any]:
-    meta: Dict[str, Any] = {
+def _build_metadata(evt: MessageEvent) -> dict[str, Any]:
+    meta: dict[str, Any] = {
         "room_id": str(evt.room_id),
         "event_id": evt.event_id,
         "timestamp": getattr(evt, "timestamp", None),
@@ -183,7 +184,7 @@ def _build_metadata(evt: MessageEvent) -> Dict[str, Any]:
     return meta
 
 
-def _load_settings(config_obj: Any) -> Dict[str, Any]:
+def _load_settings(config_obj: Any) -> dict[str, Any]:
     defaults = {
         # From inside the maubot container, the host is reachable via the docker gateway.
         "ingest_url": "http://172.23.0.1:54323/observe",

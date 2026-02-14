@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import re
-from typing import Dict, List, Optional
-
 
 SOFT_PREFIXES = [
     "Sam:",
@@ -18,7 +16,7 @@ SOFT_PHRASES = [
 LOGISTICS_KEYWORDS = {"token", "secret", "password", "api key", "ip", "port", "localhost", "127.", "host.docker.internal"}
 
 
-def _tokenize(text: str) -> List[str]:
+def _tokenize(text: str) -> list[str]:
     return [t for t in re.findall(r"\w+", text.lower()) if t]
 
 
@@ -46,7 +44,7 @@ def reflection_pass(
     combined = f"{user_message} {assistant_reply}".strip()
     memories = adapter.query_memories(user_id=user_id, query=combined, limit=max_candidates) or []
 
-    eligible: List[Dict] = []
+    eligible: list[dict] = []
     convo_lower = combined.lower()
     for mem in memories:
         meta = mem.get("metadata") or {}

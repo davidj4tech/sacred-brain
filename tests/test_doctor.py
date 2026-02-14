@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from unittest import mock
 
 from sacred_brain.doctor import check_litellm
