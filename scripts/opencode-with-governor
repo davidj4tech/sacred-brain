@@ -1,0 +1,26 @@
+#!/bin/sh
+# opencode-with-governor — launcher wrapper.
+#
+# Pre-pulls project-scoped memory into .agents/CONTEXT_MEMORY.md, then execs
+# opencode with the original argv. On exit, drains any pending outcomes
+# queued during the session.
+
+set -e
+
+REPO_SCRIPTS="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
+if [ -z "$REPO_SCRIPTS" ] || [ ! -x "$REPO_SCRIPTS/governor_context.sh" ]; then
+  # Fall back to PATH lookup (covers symlink-in-~/.local/bin installs)
+  REPO_SCRIPTS="$HOME/.local/bin"
+fi
+
+if [ -x "$REPO_SCRIPTS/governor_context.sh" ]; then
+  "$REPO_SCRIPTS/governor_context.sh" --target opencode || true
+fi
+
+if [ -r "$REPO_SCRIPTS/_outcome_drain.sh" ]; then
+  # shellcheck disable=SC1091
+  . "$REPO_SCRIPTS/_outcome_drain.sh"
+  trap 'drain_outcomes opencode-pending-outcome.jsonl' EXIT
+fi
+
+exec opencode "$@"

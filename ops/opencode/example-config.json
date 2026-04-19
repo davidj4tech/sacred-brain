@@ -1,0 +1,10 @@
+{
+  "_comment": "Example OpenCode config snippet for the native-hook install path. OpenCode's hook API is unsettled as of 2026-04; the exact key name ('hooks.preSession' below) may differ in your version. If this shape doesn't match, fall back to the opencode-with-governor launcher wrapper — see docs/OPENCODE_BRIDGE.md.",
+  "hooks": {
+    "preSession": [
+      {
+        "command": "~/.local/bin/governor_context.sh --target opencode"
+      }
+    ]
+  }
+}

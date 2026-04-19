@@ -12,6 +12,7 @@ ops/compose/mautrix-meta/*.db
 ops/compose/mautrix-meta/logs/
 
 # Runtime data
+var/
 maubot-data/
 bench_sam_fast_remote_*/
 ext/mem0/
@@ -20,6 +21,8 @@ ext/mem0/
 .codex/
 codex/
 codex-resume.txt
+.agents/
+.claude/CONTEXT_MEMORY.md
 
 # Secrets
 .env.*

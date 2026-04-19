@@ -1,4 +1,4 @@
-# Task: OpenCode bridge
+# Task: OpenCode bridge (done)
 
 ## Context
 OpenCode reads `AGENTS.md` as its primary instruction surface, with no auto-memory system of its own. Once tasks 001–004 land, the Governor has project scopes, retrieval feedback, and outcome-aware ranking; all that's left is getting OpenCode sessions to see the same memories Claude Code sessions do.

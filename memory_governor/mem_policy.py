@@ -73,9 +73,10 @@ def default_tier_for_event(event: ObserveRequest) -> str:
 
 
 LOW_SALIENCE_SOURCES: dict[str, float] = {
-    # Claude Code PreCompact dumps are long and keyword-dense by nature.
+    # PreCompact / session-tail dumps are long and keyword-dense by nature.
     # Cap so they flood working memory as context, not as candidates.
     "claude-code:precompact": 0.35,
+    "opencode:precompact": 0.35,
 }
 
 

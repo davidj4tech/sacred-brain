@@ -51,7 +51,7 @@ SCOPE="${SCOPE:-project:$PROJECT/user:$USER_ID}"
 
 case "$TARGET" in
   claude)   OUT="${OUT:-.claude/CONTEXT_MEMORY.md}" ;;
-  opencode) OUT="${OUT:-AGENTS.local.md}" ;;
+  opencode) OUT="${OUT:-.agents/CONTEXT_MEMORY.md}" ;;
   *) echo "unknown --target: $TARGET" >&2; exit 2 ;;
 esac
 
