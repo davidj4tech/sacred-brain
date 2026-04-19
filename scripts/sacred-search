@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# sacred-search — search Hippocampus memories by query string.
+#
+# Usage:
+#   sacred-search <query> [user_id] [limit]
+#
+# Defaults: user_id=sam, limit=5. Set user_id=david to search memories
+# extracted from ChatGPT conversation imports.
+#
+# Env (loaded from ~/.config/hippocampus.env or ~/.config/sacred-brain.env):
+#   HIPPOCAMPUS_URL       default http://127.0.0.1:54321
+#   HIPPOCAMPUS_API_KEY   required if Hippocampus auth is enabled
+#
+# Hits Hippocampus directly (port 54321), not the Governor's /recall. This
+# means ChatGPT-archive memories are returned — the Governor's archive
+# suppression doesn't apply here.
+
+set -euo pipefail
+
+if [[ $# -lt 1 ]]; then
+  sed -n '3,8p' "$0" >&2
+  exit 2
+fi
+
+QUERY="$1"
+USER_ID="${2:-sam}"
+LIMIT="${3:-5}"
+
+# Load env (first hit wins)
+for f in "$HOME/.config/hippocampus.env" "$HOME/.config/sacred-brain.env"; do
+  if [[ -r "$f" ]]; then
+    set -a; . "$f"; set +a
+    break
+  fi
+done
+
+BASE_URL="${HIPPOCAMPUS_URL:-http://127.0.0.1:54321}"
+API_KEY="${HIPPOCAMPUS_API_KEY:-}"
+
+ENCODED_QUERY="$(QUERY="$QUERY" python3 -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["QUERY"]))')"
+
+HDRS=()
+[[ -n "$API_KEY" ]] && HDRS+=(-H "X-API-Key: $API_KEY")
+
+curl -sS --max-time 10 "${HDRS[@]}" \
+  "${BASE_URL}/memories/${USER_ID}?query=${ENCODED_QUERY}&limit=${LIMIT}" \
+  | python3 -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+except Exception as e:
+    print(f"sacred-search: failed to parse response: {e}", file=sys.stderr)
+    sys.exit(1)
+if "memories" not in data:
+    # Could be an error body
+    print(json.dumps(data, indent=2))
+    sys.exit(1)
+memories = data["memories"]
+if not memories:
+    print("No memories found.")
+    sys.exit(0)
+for i, m in enumerate(memories, 1):
+    meta = m.get("metadata") or {}
+    src = meta.get("source", "?")
+    kind = meta.get("kind", "?")
+    conf = meta.get("confidence", "?")
+    title = meta.get("title", "")
+    score = m.get("score")
+    score_str = f" score={score:.2f}" if isinstance(score, (int, float)) else ""
+    text = m.get("text", "")
+    print(f"[{i}] ({kind}, conf={conf}, src={src}{score_str}) " + text)
+    if title:
+        print(f"    from: {title}")
+    print()
+'
