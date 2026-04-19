@@ -53,6 +53,9 @@ class GovernorConfig:
     rerank_model: str = "gpt-4o-mini"
     rerank_max: int = 10
     recall_protect_days: int = 30
+    outcome_delete_threshold: float = 0.2
+    prune_confidence_floor: float = 0.15
+    outcome_grace_days: int = 7
     state_dir: Path = field(
         default_factory=lambda: Path(
             os.environ.get(
@@ -93,6 +96,9 @@ def load_config() -> GovernorConfig:
         rerank_model=os.environ.get("MG_RERANK_MODEL", "gpt-4o-mini"),
         rerank_max=int(os.environ.get("MG_RERANK_MAX", "10")),
         recall_protect_days=int(os.environ.get("MG_RECALL_PROTECT_DAYS", "30")),
+        outcome_delete_threshold=float(os.environ.get("MG_OUTCOME_DELETE_THRESHOLD", "0.2")),
+        prune_confidence_floor=float(os.environ.get("MG_PRUNE_CONFIDENCE_FLOOR", "0.15")),
+        outcome_grace_days=int(os.environ.get("MG_OUTCOME_GRACE_DAYS", "7")),
     )
 
     cfg.state_dir.mkdir(parents=True, exist_ok=True)

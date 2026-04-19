@@ -34,10 +34,18 @@ MAX_AGE_DAYS = int(os.getenv("AUTO_PRUNE_MAX_AGE_DAYS", "30"))
 RESPECT_RELEVANCE = os.getenv("AUTO_PRUNE_RESPECT_RELEVANCE", "true").lower() in {"1", "true", "yes", "on"}
 GOVERNOR_URL = os.getenv("GOVERNOR_URL", "http://127.0.0.1:54323")
 GOVERNOR_PROTECT_DAYS = int(os.getenv("MG_RECALL_PROTECT_DAYS", "30"))
+OUTCOME_GRACE_DAYS = int(os.getenv("MG_OUTCOME_GRACE_DAYS", "7"))
+PRUNE_CONFIDENCE_FLOOR = float(os.getenv("MG_PRUNE_CONFIDENCE_FLOOR", "0.15"))
 
 
 def fetch_protected_ids() -> set[str]:
-    """Query Governor for recently-recalled memory_ids that should not be pruned."""
+    """Memory ids that must not be pruned this run.
+
+    Union of:
+      - recently-recalled (MG_RECALL_PROTECT_DAYS)
+      - had any outcome within MG_OUTCOME_GRACE_DAYS (loop needs time to correct)
+    """
+    protected: set[str] = set()
     try:
         resp = requests.get(
             f"{GOVERNOR_URL}/recall_stats",
@@ -45,7 +53,32 @@ def fetch_protected_ids() -> set[str]:
             timeout=5,
         )
         resp.raise_for_status()
-        return set(resp.json().get("memory_ids", []))
+        protected.update(resp.json().get("memory_ids", []))
+    except Exception:
+        pass
+    try:
+        resp = requests.get(
+            f"{GOVERNOR_URL}/outcome_stats",
+            params={"grace_days": OUTCOME_GRACE_DAYS},
+            timeout=5,
+        )
+        resp.raise_for_status()
+        protected.update(resp.json().get("grace_memory_ids", []))
+    except Exception:
+        pass
+    return protected
+
+
+def fetch_disputed_low_conf_ids() -> set[str]:
+    """Ids below confidence floor AND disputed — prune candidates from outcome overlay."""
+    try:
+        resp = requests.get(
+            f"{GOVERNOR_URL}/outcome_stats",
+            params={"disputed_below": PRUNE_CONFIDENCE_FLOOR},
+            timeout=5,
+        )
+        resp.raise_for_status()
+        return set(resp.json().get("disputed_below_floor", []))
     except Exception:
         return set()
 
@@ -177,8 +210,17 @@ def prune_user(user_id: str, protected_ids: set[str] | None = None) -> int:
 def main(user_ids: list[str]) -> int:
     protected = fetch_protected_ids()
     if protected:
-        print(f"Protected {len(protected)} recently-recalled memories from prune", file=sys.stderr)
-    total = 0
+        print(f"Protected {len(protected)} recently-active memories from prune", file=sys.stderr)
+    disputed_low = fetch_disputed_low_conf_ids() - protected
+    if disputed_low:
+        print(f"Targeting {len(disputed_low)} disputed low-confidence memories", file=sys.stderr)
+        for mem_id in disputed_low:
+            try:
+                url = f"{HIPPO_URL}/memories/{mem_id}"
+                requests.delete(url, headers=_headers(), timeout=10)
+            except Exception:
+                continue
+    total = len(disputed_low)
     for uid in user_ids:
         total += prune_user(uid, protected)
     return total

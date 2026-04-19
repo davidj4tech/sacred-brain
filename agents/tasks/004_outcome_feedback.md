@@ -1,4 +1,4 @@
-# Task: Outcome feedback
+# Task: Outcome feedback (core done; Stop-hook deferred with task 003)
 
 ## Context
 The Governor's confidence scores come from heuristics applied at write time (keyword match, phrase shape, explicit `/remember`). There is no downstream signal telling the system whether acting on a memory *actually worked*. A hallucinated or obsolete memory stays at its initial confidence until a human deletes it.

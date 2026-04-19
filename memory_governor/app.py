@@ -17,6 +17,8 @@ from memory_governor.schemas import (
     ConsolidateResponse,
     ObserveRequest,
     ObserveResponse,
+    OutcomeRequest,
+    OutcomeResponse,
     RecallRequest,
     RecallResponse,
     RememberRequest,
@@ -83,6 +85,12 @@ class GovernorRuntime:
             self._queue_rt.put_nowait(job)
         return job["id"]
 
+    def enqueue_delete(self, memory_id: str) -> str:
+        job = self.queue.enqueue({"type": "delete_memory", "payload": {"memory_id": memory_id}})
+        if self._queue_rt:
+            self._queue_rt.put_nowait(job)
+        return job["id"]
+
     async def _process_job(self, job: dict[str, Any]) -> bool:
         # DurableQueue wraps items in {"id", "payload", "ts"} envelope.
         # The actual item is inside job["payload"], which has {"type", "payload"}.
@@ -100,6 +108,14 @@ class GovernorRuntime:
             mem_id = inner.get("payload", {}).get("memory_id")
             if mem_id:
                 self.store.bump_recall(mem_id)
+            return True
+        if job_type == "delete_memory":
+            mem_id = inner.get("payload", {}).get("memory_id")
+            if mem_id:
+                ok = await self.hippo.delete_memory(mem_id)
+                if ok:
+                    LOGGER.info("Deleted memory via outcome-threshold: %s", mem_id)
+                return ok
             return True
         LOGGER.warning("Unknown job type: %s (keys: %s)", job_type, list(job.keys()))
         return True
@@ -237,6 +253,62 @@ async def remember(payload: RememberRequest) -> RememberResponse:
     return RememberResponse(status="stored", memory_id=job_id)
 
 
+@app.post("/outcome", response_model=OutcomeResponse)
+async def outcome(payload: OutcomeRequest) -> OutcomeResponse:
+    from fastapi import HTTPException
+
+    mem = await runtime.hippo.get_memory(payload.user_id, payload.memory_id)
+    if mem is None:
+        raise HTTPException(status_code=404, detail="memory not found")
+
+    meta = mem.get("metadata", {}) or {}
+    base_conf = meta.get("confidence")
+    if base_conf is None:
+        base_conf = 0.5
+    try:
+        base_conf = float(base_conf)
+    except (TypeError, ValueError):
+        base_conf = 0.5
+
+    result = runtime.store.apply_outcome(
+        memory_id=payload.memory_id,
+        outcome=payload.outcome,
+        base_confidence=base_conf,
+        source=payload.source,
+        note=payload.note,
+    )
+
+    action = "noop"
+    if payload.outcome == "bad" and result["confidence_after"] < runtime.cfg.outcome_delete_threshold:
+        runtime.enqueue_delete(payload.memory_id)
+        action = "deleted"
+
+    if runtime.stream:
+        runtime.stream.append({
+            "source": "governor:outcome",
+            "user_id": payload.user_id,
+            "text": f"outcome={payload.outcome} memory_id={payload.memory_id}",
+            "timestamp": int(time.time()),
+            "scope": {"kind": "user", "id": payload.user_id},
+            "metadata": {
+                "memory_id": payload.memory_id,
+                "outcome": payload.outcome,
+                "note": payload.note,
+                "client_source": payload.source,
+                "confidence_before": result["confidence_before"],
+                "confidence_after": result["confidence_after"],
+                "action": action,
+            },
+        })
+
+    return OutcomeResponse(
+        status="ok",
+        memory_id=payload.memory_id,
+        confidence_after=result["confidence_after"],
+        action=action,
+    )
+
+
 @app.post("/recall", response_model=RecallResponse)
 async def recall(payload: RecallRequest) -> RecallResponse:
     memories = await runtime.hippo.query_memories(
@@ -248,6 +320,9 @@ async def recall(payload: RecallRequest) -> RecallResponse:
     if payload.filters.scope is not None:
         filter_scope_path = _scope_path(payload.filters.scope)
 
+    all_ids = [m.get("id") for m in memories if m.get("id")]
+    outcomes = runtime.store.get_outcomes_bulk(all_ids) if all_ids else {}
+
     filtered = []
     for mem in memories:
         meta = mem.get("metadata", {}) or {}
@@ -257,9 +332,17 @@ async def recall(payload: RecallRequest) -> RecallResponse:
             continue
         if payload.filters.kinds and kind and kind not in payload.filters.kinds:
             continue
-        confidence = meta.get("confidence")
-        if payload.filters.min_confidence is not None and confidence is not None:
-            if confidence < payload.filters.min_confidence:
+        mem_id = mem.get("id") or meta.get("memory_id")
+        outcome_row = outcomes.get(mem_id or "", {})
+        if outcome_row.get("stale") and not payload.filters.include_stale:
+            continue
+
+        base_confidence = meta.get("confidence")
+        effective_confidence = base_confidence
+        if base_confidence is not None:
+            effective_confidence = max(0.0, min(0.99, float(base_confidence) + outcome_row.get("confidence_delta", 0.0)))
+        if payload.filters.min_confidence is not None and effective_confidence is not None:
+            if effective_confidence < payload.filters.min_confidence:
                 continue
         stored_scope_path = _scope_path_from_meta(meta)
         if filter_scope_path is not None:
@@ -268,13 +351,15 @@ async def recall(payload: RecallRequest) -> RecallResponse:
         ts = meta.get("timestamp") or meta.get("ts")
         filtered.append(
             {
-                "memory_id": mem.get("id") or meta.get("memory_id"),
+                "memory_id": mem_id,
                 "text": mem.get("text") or mem.get("memory") or "",
                 "kind": kind,
                 "tier": tier,
-                "confidence": confidence,
+                "confidence": effective_confidence,
                 "timestamp": ts,
                 "scope_path": stored_scope_path,
+                "disputed": bool(outcome_row.get("disputed")),
+                "last_outcome": outcome_row.get("last_outcome"),
                 "provenance": {
                     "source": meta.get("source"),
                     "event_id": meta.get("event_id"),
@@ -298,10 +383,17 @@ async def recall(payload: RecallRequest) -> RecallResponse:
         mid = item.get("memory_id")
         rc = recall_counts.get(mid, 0) if mid else 0
         recall_boost = min(1.0, rc / 10.0)
+        outcome_bonus = 1.0 if item.get("last_outcome") == "good" else 0.0
         exact_bonus = 0.05 if (
             filter_scope_path is not None and item.get("scope_path") == filter_scope_path
         ) else 0.0
-        return conf * 0.65 + recency * 0.25 + recall_boost * 0.10 + exact_bonus
+        return (
+            conf * 0.6
+            + recency * 0.2
+            + recall_boost * 0.1
+            + outcome_bonus * 0.1
+            + exact_bonus
+        )
 
     ranked = sorted(filtered, key=_score, reverse=True)
     top = ranked[: payload.k]
@@ -312,10 +404,40 @@ async def recall(payload: RecallRequest) -> RecallResponse:
             runtime.enqueue_recall_hit(mid)
 
     results = [
-        {k: v for k, v in item.items() if k not in ("memory_id", "scope_path")}
+        {k: v for k, v in item.items() if k not in ("memory_id", "scope_path", "last_outcome")}
         for item in top
     ]
     return RecallResponse(results=results)
+
+
+@app.get("/outcome_stats")
+async def outcome_stats(
+    grace_days: int | None = None,
+    disputed_below: float | None = None,
+) -> dict[str, Any]:
+    """Introspection for the prune script.
+
+    - `grace_days` → memory_ids with any outcome in the last N days (protected)
+    - `disputed_below` → disputed ids whose effective confidence delta pushes them below the floor
+    """
+    out: dict[str, Any] = {}
+    if grace_days is not None:
+        since_ts = int(time.time() - grace_days * 86400)
+        out["grace_memory_ids"] = sorted(runtime.store.recent_outcome_ids(since_ts))
+    if disputed_below is not None:
+        # We only have confidence_delta here, not the base. Approximation: any
+        # memory whose delta alone is ≤ (disputed_below - 0.5) from a nominal 0.5
+        # base. Precise computation would require fetching each memory; the
+        # Governor doesn't do that on a hot path. Return *candidate* ids; the
+        # actual deletion still runs via the /outcome threshold path.
+        import sqlite3 as _sq
+        with _sq.connect(runtime.cfg.db_path) as conn:
+            rows = conn.execute(
+                "SELECT memory_id FROM memory_outcomes WHERE disputed=1 AND confidence_delta < ?",
+                (disputed_below - 0.5,),
+            ).fetchall()
+        out["disputed_below_floor"] = [r[0] for r in rows]
+    return out
 
 
 @app.get("/scopes")

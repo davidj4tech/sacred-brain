@@ -54,6 +54,7 @@ class RecallFilters(BaseModel):
     min_confidence: float | None = None
     since_days: int | None = None
     scope: Scope | None = None
+    include_stale: bool = False
 
 
 class RecallRequest(BaseModel):
@@ -70,6 +71,22 @@ class RecallItem(BaseModel):
     confidence: float | None = None
     timestamp: int | None = None
     provenance: dict[str, Any] = Field(default_factory=dict)
+    disputed: bool = False
+
+
+class OutcomeRequest(BaseModel):
+    memory_id: str
+    user_id: str
+    outcome: Literal["good", "bad", "stale"]
+    note: str | None = None
+    source: str | None = None
+
+
+class OutcomeResponse(BaseModel):
+    status: str
+    memory_id: str
+    confidence_after: float
+    action: Literal["noop", "deleted"] = "noop"
 
 
 class RecallResponse(BaseModel):

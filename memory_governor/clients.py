@@ -85,6 +85,42 @@ class HippocampusClient:
                 LOGGER.error("Hippocampus write failed: %s", exc)
                 return None
 
+    async def get_memory(self, user_id: str, memory_id: str) -> dict[str, Any] | None:
+        """Fetch a single memory by id for user_id. Returns None if not found.
+
+        Hippocampus exposes no single-id GET, so we list the user's memories
+        and filter. Fine for outcome validation (low call rate).
+        """
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            try:
+                resp = await client.get(
+                    f"{self.hippo_url}/memories/{user_id}",
+                    params={"limit": 500},
+                    headers=self._headers(),
+                )
+                resp.raise_for_status()
+                data = resp.json()
+            except Exception as exc:
+                LOGGER.error("Hippocampus lookup failed: %s", exc)
+                return None
+        for mem in data.get("memories", []):
+            if mem.get("id") == memory_id:
+                return mem
+        return None
+
+    async def delete_memory(self, memory_id: str) -> bool:
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            try:
+                resp = await client.delete(
+                    f"{self.hippo_url}/memories/{memory_id}",
+                    headers=self._headers(),
+                )
+                resp.raise_for_status()
+                return True
+            except Exception as exc:
+                LOGGER.error("Hippocampus delete failed: %s", exc)
+                return False
+
     async def query_memories(
         self, user_id: str, query: str, limit: int | None = None
     ) -> list[dict[str, Any]]:

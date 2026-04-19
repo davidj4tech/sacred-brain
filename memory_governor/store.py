@@ -12,6 +12,14 @@ from memory_governor.schemas import ObserveRequest, Scope
 from memory_governor.scopes import scope_path
 
 
+def _clamp_confidence(val: float) -> float:
+    if val < 0.0:
+        return 0.0
+    if val > 0.99:
+        return 0.99
+    return val
+
+
 def _scope_key(scope: Scope) -> str:
     # Legacy flat key. Retained because existing rows were keyed this way.
     return f"{scope.kind}:{scope.id}"
@@ -95,6 +103,24 @@ class WorkingStore:
                 "CREATE INDEX IF NOT EXISTS idx_recall_last ON recall_stats(last_recalled_at)"
             )
 
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS memory_outcomes (
+                    memory_id        TEXT PRIMARY KEY,
+                    confidence_delta REAL NOT NULL DEFAULT 0.0,
+                    salience_delta   REAL NOT NULL DEFAULT 0.0,
+                    disputed         INTEGER NOT NULL DEFAULT 0,
+                    stale            INTEGER NOT NULL DEFAULT 0,
+                    last_outcome     TEXT,
+                    last_outcome_ts  INTEGER,
+                    history_json     TEXT NOT NULL DEFAULT '[]'
+                );
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_outcomes_last_ts ON memory_outcomes(last_outcome_ts)"
+            )
+
     def bump_recall(self, memory_id: str, now_ts: int | None = None) -> None:
         """Increment recall_count and stamp last_recalled_at for memory_id."""
         if not memory_id:
@@ -147,6 +173,156 @@ class WorkingStore:
                 (int(since_ts),),
             ).fetchall()
         return [row[0] for row in rows]
+
+    def _outcome_row(self, conn: sqlite3.Connection, memory_id: str) -> dict[str, Any]:
+        row = conn.execute(
+            "SELECT confidence_delta, salience_delta, disputed, stale, last_outcome, last_outcome_ts, history_json "
+            "FROM memory_outcomes WHERE memory_id=?",
+            (memory_id,),
+        ).fetchone()
+        if not row:
+            return {
+                "confidence_delta": 0.0,
+                "salience_delta": 0.0,
+                "disputed": 0,
+                "stale": 0,
+                "last_outcome": None,
+                "last_outcome_ts": None,
+                "history": [],
+            }
+        return {
+            "confidence_delta": row[0],
+            "salience_delta": row[1],
+            "disputed": row[2],
+            "stale": row[3],
+            "last_outcome": row[4],
+            "last_outcome_ts": row[5],
+            "history": json.loads(row[6] or "[]"),
+        }
+
+    def apply_outcome(
+        self,
+        memory_id: str,
+        outcome: str,
+        base_confidence: float,
+        source: str | None = None,
+        note: str | None = None,
+        now_ts: int | None = None,
+    ) -> dict[str, Any]:
+        """Apply an outcome to a memory. Returns {confidence_before, confidence_after, row}."""
+        if outcome not in {"good", "bad", "stale"}:
+            raise ValueError(f"unknown outcome: {outcome!r}")
+        ts = int(now_ts or time.time())
+        with sqlite3.connect(self.db_path) as conn:
+            current = self._outcome_row(conn, memory_id)
+            confidence_before = _clamp_confidence(base_confidence + current["confidence_delta"])
+
+            new_conf_delta = current["confidence_delta"]
+            new_sal_delta = current["salience_delta"]
+            disputed = current["disputed"]
+            stale = current["stale"]
+
+            if outcome == "good":
+                new_conf_delta += 0.05
+                new_sal_delta += 0.05
+            elif outcome == "bad":
+                target_effective = confidence_before * 0.7
+                new_conf_delta = target_effective - base_confidence
+                disputed = 1
+            elif outcome == "stale":
+                stale = 1
+
+            confidence_after = _clamp_confidence(base_confidence + new_conf_delta)
+
+            history = current["history"]
+            history.append({
+                "ts": ts,
+                "outcome": outcome,
+                "source": source,
+                "note": note,
+                "confidence_before": confidence_before,
+                "confidence_after": confidence_after,
+            })
+            if len(history) > 10:
+                history = history[-10:]
+
+            conn.execute(
+                """
+                INSERT INTO memory_outcomes(memory_id, confidence_delta, salience_delta, disputed, stale, last_outcome, last_outcome_ts, history_json)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(memory_id) DO UPDATE SET
+                    confidence_delta = excluded.confidence_delta,
+                    salience_delta   = excluded.salience_delta,
+                    disputed         = excluded.disputed,
+                    stale            = excluded.stale,
+                    last_outcome     = excluded.last_outcome,
+                    last_outcome_ts  = excluded.last_outcome_ts,
+                    history_json     = excluded.history_json
+                """,
+                (
+                    memory_id, new_conf_delta, new_sal_delta, disputed, stale,
+                    outcome, ts, json.dumps(history),
+                ),
+            )
+            conn.commit()
+
+        return {
+            "confidence_before": confidence_before,
+            "confidence_after": confidence_after,
+            "row": {
+                "confidence_delta": new_conf_delta,
+                "salience_delta": new_sal_delta,
+                "disputed": disputed,
+                "stale": stale,
+                "last_outcome": outcome,
+                "last_outcome_ts": ts,
+                "history": history,
+            },
+        }
+
+    def get_outcome(self, memory_id: str) -> dict[str, Any] | None:
+        with sqlite3.connect(self.db_path) as conn:
+            row = self._outcome_row(conn, memory_id)
+        if row["last_outcome"] is None and row["confidence_delta"] == 0.0 and row["salience_delta"] == 0.0:
+            return None
+        return row
+
+    def get_outcomes_bulk(self, memory_ids: list[str]) -> dict[str, dict[str, Any]]:
+        if not memory_ids:
+            return {}
+        placeholders = ",".join("?" * len(memory_ids))
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                f"SELECT memory_id, confidence_delta, salience_delta, disputed, stale, last_outcome, last_outcome_ts "
+                f"FROM memory_outcomes WHERE memory_id IN ({placeholders})",
+                tuple(memory_ids),
+            ).fetchall()
+        return {
+            row[0]: {
+                "confidence_delta": row[1],
+                "salience_delta": row[2],
+                "disputed": bool(row[3]),
+                "stale": bool(row[4]),
+                "last_outcome": row[5],
+                "last_outcome_ts": row[6],
+            }
+            for row in rows
+        }
+
+    def stale_ids(self) -> set[str]:
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT memory_id FROM memory_outcomes WHERE stale=1"
+            ).fetchall()
+        return {row[0] for row in rows}
+
+    def recent_outcome_ids(self, since_ts: int) -> set[str]:
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT memory_id FROM memory_outcomes WHERE last_outcome_ts >= ?",
+                (int(since_ts),),
+            ).fetchall()
+        return {row[0] for row in rows}
 
     def add_working(self, event: ObserveRequest) -> bool:
         """Returns True if inserted, False if deduped."""
