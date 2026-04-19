@@ -19,7 +19,7 @@ ext/mem0/
 
 # Session/IDE artifacts
 .codex/
-codex/
+/codex/
 codex-resume.txt
 .agents/
 .claude/CONTEXT_MEMORY.md

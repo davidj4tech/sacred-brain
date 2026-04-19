@@ -1,4 +1,4 @@
-# Task: Codex bridge
+# Task: Codex bridge (done)
 
 ## Context
 Codex (OpenAI's CLI coding agent) reads `AGENTS.md` as its primary instruction surface, same as OpenCode. The repo-root `AGENTS.md` already carries the pointer line telling any reading agent to treat `.agents/CONTEXT_MEMORY.md` as recalled long-term memory. That means once a pre-session pull populates that file, Codex picks it up for free — no forking, no plugin API.

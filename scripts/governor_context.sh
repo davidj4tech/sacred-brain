@@ -3,7 +3,11 @@
 # them to a markdown file the agent harness will load as context.
 #
 # Usage:
-#   governor_context.sh --target claude|opencode [--scope <path>] [--k 20] [--out <path>]
+#   governor_context.sh --target claude|opencode|codex|agents [--scope <path>] [--k 20] [--out <path>]
+#
+# `agents` is the canonical agent-neutral target (writes to .agents/CONTEXT_MEMORY.md).
+# `opencode` and `codex` are aliases for `agents`. `claude` writes to .claude/CONTEXT_MEMORY.md.
+# New integrations should prefer `agents`.
 #
 # Exits 0 on empty recall; exits 0 on network error (degrade gracefully).
 
@@ -50,8 +54,8 @@ PROJECT="$(basename "$PWD")"
 SCOPE="${SCOPE:-project:$PROJECT/user:$USER_ID}"
 
 case "$TARGET" in
-  claude)   OUT="${OUT:-.claude/CONTEXT_MEMORY.md}" ;;
-  opencode) OUT="${OUT:-.agents/CONTEXT_MEMORY.md}" ;;
+  claude)                  OUT="${OUT:-.claude/CONTEXT_MEMORY.md}" ;;
+  agents|opencode|codex)   OUT="${OUT:-.agents/CONTEXT_MEMORY.md}" ;;
   *) echo "unknown --target: $TARGET" >&2; exit 2 ;;
 esac
 

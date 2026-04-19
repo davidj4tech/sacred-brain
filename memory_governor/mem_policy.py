@@ -77,6 +77,7 @@ LOW_SALIENCE_SOURCES: dict[str, float] = {
     # Cap so they flood working memory as context, not as candidates.
     "claude-code:precompact": 0.35,
     "opencode:precompact": 0.35,
+    "codex:precompact": 0.35,
 }
 
 
