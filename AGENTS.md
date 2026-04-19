@@ -1,0 +1,49 @@
+# Agent Operating Instructions
+
+This file is the shared briefing for any coding agent working in this repository — Codex, Claude Code, OpenCode, Aider, Cursor, or anything else that reads `AGENTS.md` / `CLAUDE.md` at repo root.
+
+## What this project is
+
+Sacred Brain — a small personal memory+agents stack running on a Raspberry Pi.
+
+Two core services run under systemd:
+
+- **Hippocampus** (`:54321`) — FastAPI memory store, Mem0-backed with SQLite persistence. The authoritative store.
+- **Memory Governor** (`:54323`) — FastAPI policy/coordination layer in front of Hippocampus. Handles salience, consolidation, tiers (`safe`/`raw`), scopes, and durable write queueing.
+
+See `docs/ARCHITECTURE.md`, `docs/MEMORY_GOVERNOR.md`, and `docs/STACK.md` for the live picture. `CHANGELOG.md` is the timeline.
+
+## Where work lives
+
+- **Design docs** → `docs/*.md`. Permanent. Explain *what* and *why*.
+- **Task files** → `agents/tasks/NNN_slug.md`. Disposable work orders — one focused PR each. Format in `agents/tasks/README.md`.
+- **Historical tasks (Codex-only)** → `codex/tasks/001`–`009`. Kept for provenance; do not add new files here. New tasks go under `agents/tasks/`.
+- **Session notes** → `SESSION_LOG.md` and `CHANGELOG.md`.
+
+## Expected workflow
+
+1. Read the design docs relevant to the area you're touching (usually `docs/MEMORY_GOVERNOR.md`, `docs/ARCHITECTURE.md`).
+2. Check `agents/tasks/` for a pending task. If none fits, author one using the template in `agents/tasks/README.md` before coding.
+3. Implement in small, reviewable steps. Keep tests passing (`justfile` has `smoke`, `health`, `config-check`).
+4. Update the task file status inline (`(in progress)` → `(done)`).
+5. Note significant milestones in `SESSION_LOG.md` or `CHANGELOG.md`.
+
+## Ground rules
+
+- Don't edit `/home/ryer/projects/sacred-brain/` — that's a stale 2025 copy. The live tree is `/opt/sacred-brain/`.
+- Hippocampus stays a dumb semantic store. New policy/lifecycle logic goes in the Governor.
+- Services run as the `sacred` user (nologin). State lives in `/var/lib/sacred-brain/`, config in `/etc/sacred-brain/`.
+- All new memory features should respect the `safe`/`raw` tier split and scope filtering — don't bypass them.
+
+## Per-agent quirks
+
+If an agent needs extra guidance beyond what's here, add a short section below with the agent's name. Everything above applies to all agents.
+
+### Codex
+Legacy task files under `codex/tasks/` are historical; `codex/instructions.md` is superseded by this file for new work.
+
+### Claude Code
+Project-scoped memory in `.claude/` is welcome; see `docs/MEMORY_GOVERNOR_v2.md` §4 for the planned sync bridge between Claude Code's auto-memory and the Governor.
+
+### OpenCode
+Reads this file directly. See `docs/MEMORY_GOVERNOR_v2.md` §5 for the planned `AGENTS.md`-managed memory block.
