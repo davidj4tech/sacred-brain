@@ -1,4 +1,4 @@
-# Task: Claude Code bridge
+# Task: Claude Code bridge (scripts + installer done; per-device rollout pending)
 
 ## Context
 Claude Code already has an auto-memory system — frontmatter-typed Markdown files under `~/.claude/projects/<slug>/memory/` with a `MEMORY.md` index — but it's a per-machine, per-project silo with no link to the Governor. Meanwhile the Governor holds the authoritative cross-device memory and will know about project scopes after task 002 ships.

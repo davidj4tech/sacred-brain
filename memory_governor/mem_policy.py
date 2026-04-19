@@ -72,6 +72,13 @@ def default_tier_for_event(event: ObserveRequest) -> str:
     return "safe"
 
 
+LOW_SALIENCE_SOURCES: dict[str, float] = {
+    # Claude Code PreCompact dumps are long and keyword-dense by nature.
+    # Cap so they flood working memory as context, not as candidates.
+    "claude-code:precompact": 0.35,
+}
+
+
 def classify_observation(event: ObserveRequest) -> tuple[float, str]:
     """Return salience and decision kind."""
 
@@ -88,6 +95,9 @@ def classify_observation(event: ObserveRequest) -> tuple[float, str]:
         base = max(base, 0.6)
 
     salience = min(1.0, base)
+    cap = LOW_SALIENCE_SOURCES.get(event.source)
+    if cap is not None:
+        salience = min(salience, cap)
     if salience < 0.2:
         kind = "ignore"
     elif salience < 0.4:
