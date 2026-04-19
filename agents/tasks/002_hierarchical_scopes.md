@@ -1,4 +1,4 @@
-# Task: Hierarchical scopes
+# Task: Hierarchical scopes (done)
 
 ## Context
 `Scope` is flat today: `{kind: user|room|global, id}`. This is fine for Matrix rooms and single-user operation, but it cannot express "remember this for the sacred-brain *repo*, scoped under user sam" — which every coding-agent integration needs. Without it, Claude Code / OpenCode memory leaks across projects.

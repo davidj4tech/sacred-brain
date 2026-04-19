@@ -15,6 +15,25 @@ def _split_csv(val: str | None) -> list[str]:
     return [item.strip() for item in val.split(",") if item.strip()]
 
 
+def _parse_consolidate_scopes(val: str | None) -> list[str]:
+    """Parse MG_CONSOLIDATE_SCOPES into a list of canonical scope path strings.
+
+    Accepts:
+      - flat `kind:id`                     → `kind:id`
+      - @-chained `kind:id@kind2:id2`      → `kind:id/kind2:id2` (leftmost = most specific)
+    Raises ValueError for unknown kinds at startup.
+    """
+    from memory_governor.scopes import parse_scope_path
+
+    paths: list[str] = []
+    for raw in _split_csv(val):
+        segments = raw.split("@")
+        path = "/".join(seg.strip() for seg in segments if seg.strip())
+        parse_scope_path(path)  # validates kinds; raises on unknown
+        paths.append(path)
+    return paths
+
+
 @dataclass
 class GovernorConfig:
     bind_host: str = "127.0.0.1"
@@ -33,6 +52,7 @@ class GovernorConfig:
     rerank_enabled: bool = False
     rerank_model: str = "gpt-4o-mini"
     rerank_max: int = 10
+    recall_protect_days: int = 30
     state_dir: Path = field(
         default_factory=lambda: Path(
             os.environ.get(
@@ -68,10 +88,11 @@ def load_config() -> GovernorConfig:
         working_ttl_hours=int(os.environ.get("MG_WORKING_TTL_HOURS", "24")),
         rooms_scope=os.environ.get("MG_ROOMS_SCOPE", "room"),
         log_assistant=_as_bool(os.environ.get("MG_LOG_ASSISTANT"), False),
-        consolidate_scopes=_split_csv(os.environ.get("MG_CONSOLIDATE_SCOPES")),
+        consolidate_scopes=_parse_consolidate_scopes(os.environ.get("MG_CONSOLIDATE_SCOPES")),
         rerank_enabled=_as_bool(os.environ.get("MG_RERANK_ENABLE"), False),
         rerank_model=os.environ.get("MG_RERANK_MODEL", "gpt-4o-mini"),
         rerank_max=int(os.environ.get("MG_RERANK_MAX", "10")),
+        recall_protect_days=int(os.environ.get("MG_RECALL_PROTECT_DAYS", "30")),
     )
 
     cfg.state_dir.mkdir(parents=True, exist_ok=True)

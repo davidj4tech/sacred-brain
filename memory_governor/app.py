@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from memory_governor.clients import HippocampusClient
 from memory_governor.config import GovernorConfig, load_config
 from memory_governor.mem_policy import canonicalize_memory, classify_observation, consolidate_events, default_tier_for_event, extract_tier_and_text
+from memory_governor.scopes import matches_filter, scope_path as _scope_path
 from memory_governor.schemas import (
     ConsolidateRequest,
     ConsolidateResponse,
@@ -32,6 +33,24 @@ def _keywords_from_text(text: str, min_len: int = 4) -> list[str]:
 
     tokens = re.findall(r"\w+", text.lower())
     return sorted({t for t in tokens if len(t) >= min_len})
+
+
+def _scope_path_from_meta(meta: dict[str, Any]) -> str | None:
+    """Reconstruct a scope path string from a memory's metadata dict.
+
+    Tolerates both new-style (with parent chain) and legacy flat scope dicts.
+    """
+    scope_dict = meta.get("scope")
+    if not isinstance(scope_dict, dict):
+        return None
+    parts: list[str] = []
+    cur: Any = scope_dict
+    seen = 0
+    while isinstance(cur, dict) and cur.get("kind") and cur.get("id") is not None and seen < 16:
+        parts.append(f"{cur['kind']}:{cur['id']}")
+        cur = cur.get("parent")
+        seen += 1
+    return "/".join(parts) if parts else None
 
 
 class GovernorRuntime:
@@ -58,11 +77,18 @@ class GovernorRuntime:
             self._queue_rt.put_nowait(job)
         return job["id"]
 
+    def enqueue_recall_hit(self, memory_id: str) -> str:
+        job = self.queue.enqueue({"type": "recall_hit", "payload": {"memory_id": memory_id}})
+        if self._queue_rt:
+            self._queue_rt.put_nowait(job)
+        return job["id"]
+
     async def _process_job(self, job: dict[str, Any]) -> bool:
         # DurableQueue wraps items in {"id", "payload", "ts"} envelope.
         # The actual item is inside job["payload"], which has {"type", "payload"}.
         inner = job.get("payload", job)
-        if inner.get("type") == "memory":
+        job_type = inner.get("type")
+        if job_type == "memory":
             mem_payload = inner.get("payload", {})
             memory_id = await self.hippo.post_memory(mem_payload)
             if memory_id:
@@ -70,7 +96,12 @@ class GovernorRuntime:
                 return True
             LOGGER.warning("Memory write to Hippocampus failed")
             return False
-        LOGGER.warning("Unknown job type: %s (keys: %s)", inner.get("type"), list(job.keys()))
+        if job_type == "recall_hit":
+            mem_id = inner.get("payload", {}).get("memory_id")
+            if mem_id:
+                self.store.bump_recall(mem_id)
+            return True
+        LOGGER.warning("Unknown job type: %s (keys: %s)", job_type, list(job.keys()))
         return True
 
     async def _worker_loop(self) -> None:
@@ -213,6 +244,10 @@ async def recall(payload: RecallRequest) -> RecallResponse:
         query=payload.query,
         limit=payload.k,
     )
+    filter_scope_path: str | None = None
+    if payload.filters.scope is not None:
+        filter_scope_path = _scope_path(payload.filters.scope)
+
     filtered = []
     for mem in memories:
         meta = mem.get("metadata", {}) or {}
@@ -226,14 +261,20 @@ async def recall(payload: RecallRequest) -> RecallResponse:
         if payload.filters.min_confidence is not None and confidence is not None:
             if confidence < payload.filters.min_confidence:
                 continue
+        stored_scope_path = _scope_path_from_meta(meta)
+        if filter_scope_path is not None:
+            if stored_scope_path is None or not matches_filter(stored_scope_path, filter_scope_path):
+                continue
         ts = meta.get("timestamp") or meta.get("ts")
         filtered.append(
             {
+                "memory_id": mem.get("id") or meta.get("memory_id"),
                 "text": mem.get("text") or mem.get("memory") or "",
                 "kind": kind,
                 "tier": tier,
                 "confidence": confidence,
                 "timestamp": ts,
+                "scope_path": stored_scope_path,
                 "provenance": {
                     "source": meta.get("source"),
                     "event_id": meta.get("event_id"),
@@ -241,21 +282,62 @@ async def recall(payload: RecallRequest) -> RecallResponse:
                 },
             }
         )
-    # Simple rerank: combine confidence and recency
+
+    memory_ids = [item["memory_id"] for item in filtered if item.get("memory_id")]
+    recall_counts = runtime.store.get_recall_counts(memory_ids) if memory_ids else {}
+
     now = time.time()
     def _score(item: dict[str, Any]) -> float:
         conf = item.get("confidence") or 0.5
         ts_val = item.get("timestamp")
         if ts_val:
             age_days = max(0.0, (now - float(ts_val)) / 86400.0)
-            recency = max(0.0, 1.0 - age_days / 30.0)  # linear decay over ~30 days
+            recency = max(0.0, 1.0 - age_days / 30.0)
         else:
             recency = 0.3
-        return conf * 0.7 + recency * 0.3
+        mid = item.get("memory_id")
+        rc = recall_counts.get(mid, 0) if mid else 0
+        recall_boost = min(1.0, rc / 10.0)
+        exact_bonus = 0.05 if (
+            filter_scope_path is not None and item.get("scope_path") == filter_scope_path
+        ) else 0.0
+        return conf * 0.65 + recency * 0.25 + recall_boost * 0.10 + exact_bonus
 
     ranked = sorted(filtered, key=_score, reverse=True)
-    # If nothing found, return empty (or could return working data in future)
-    return RecallResponse(results=ranked[: payload.k])
+    top = ranked[: payload.k]
+
+    for item in top:
+        mid = item.get("memory_id")
+        if mid:
+            runtime.enqueue_recall_hit(mid)
+
+    results = [
+        {k: v for k, v in item.items() if k not in ("memory_id", "scope_path")}
+        for item in top
+    ]
+    return RecallResponse(results=results)
+
+
+@app.get("/scopes")
+async def list_scopes(prefix: str | None = None) -> dict[str, Any]:
+    scopes = runtime.store.distinct_scopes(prefix=prefix, limit=200)
+    return {"scopes": scopes}
+
+
+@app.get("/recall_stats/{memory_id}")
+async def recall_stats(memory_id: str) -> dict[str, Any]:
+    stats = runtime.store.get_recall_stats(memory_id)
+    if not stats:
+        return {"memory_id": memory_id, "recall_count": 0, "last_recalled_at": None}
+    return stats
+
+
+@app.get("/recall_stats")
+async def recall_stats_protected(since_days: int | None = None) -> dict[str, Any]:
+    days = since_days if since_days is not None else runtime.cfg.recall_protect_days
+    since_ts = int(time.time() - days * 86400)
+    ids = runtime.store.recently_recalled_ids(since_ts)
+    return {"since_days": days, "since_ts": since_ts, "memory_ids": ids}
 
 
 @app.post("/consolidate", response_model=ConsolidateResponse)

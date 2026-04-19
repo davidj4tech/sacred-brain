@@ -1,4 +1,4 @@
-# Task: Recall extends life
+# Task: Recall extends life (done)
 
 ## Context
 Today the Governor's `/recall` endpoint is read-only. A memory recalled 50 times decays at exactly the same rate as one never touched. The auto-prune timer can delete memories the system is actively relying on.

@@ -32,6 +32,22 @@ SQLITE_PATH = os.getenv("HIPPOCAMPUS_SQLITE_PATH", str(DEFAULT_DB))
 MAX_PER_USER = int(os.getenv("AUTO_PRUNE_MAX_PER_USER", "200"))
 MAX_AGE_DAYS = int(os.getenv("AUTO_PRUNE_MAX_AGE_DAYS", "30"))
 RESPECT_RELEVANCE = os.getenv("AUTO_PRUNE_RESPECT_RELEVANCE", "true").lower() in {"1", "true", "yes", "on"}
+GOVERNOR_URL = os.getenv("GOVERNOR_URL", "http://127.0.0.1:54323")
+GOVERNOR_PROTECT_DAYS = int(os.getenv("MG_RECALL_PROTECT_DAYS", "30"))
+
+
+def fetch_protected_ids() -> set[str]:
+    """Query Governor for recently-recalled memory_ids that should not be pruned."""
+    try:
+        resp = requests.get(
+            f"{GOVERNOR_URL}/recall_stats",
+            params={"since_days": GOVERNOR_PROTECT_DAYS},
+            timeout=5,
+        )
+        resp.raise_for_status()
+        return set(resp.json().get("memory_ids", []))
+    except Exception:
+        return set()
 
 
 def _headers() -> dict[str, str]:
@@ -99,7 +115,8 @@ def too_old(mem: dict[str, Any], cutoff: dt.datetime) -> bool:
         return False
 
 
-def prune_user(user_id: str) -> int:
+def prune_user(user_id: str, protected_ids: set[str] | None = None) -> int:
+    protected_ids = protected_ids or set()
     memories = [m for m in fetch_memories(user_id) if is_auto(m)]
     cutoff = dt.datetime.now(dt.UTC) - dt.timedelta(days=MAX_AGE_DAYS)
     # Sort by metadata timestamp if present, else leave order
@@ -137,6 +154,8 @@ def prune_user(user_id: str) -> int:
         mem_id = mem.get("id")
         if not mem_id:
             continue
+        if mem_id in protected_ids:
+            continue
         # If we are deleting a "keep/high" due to cap, promote once before deletion
         if relevance(mem) in {"keep", "high"}:
             original = fetch_memory(mem_id) or mem
@@ -156,9 +175,12 @@ def prune_user(user_id: str) -> int:
 
 
 def main(user_ids: list[str]) -> int:
+    protected = fetch_protected_ids()
+    if protected:
+        print(f"Protected {len(protected)} recently-recalled memories from prune", file=sys.stderr)
     total = 0
     for uid in user_ids:
-        total += prune_user(uid)
+        total += prune_user(uid, protected)
     return total
 
 

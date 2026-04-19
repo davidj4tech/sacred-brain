@@ -9,9 +9,11 @@ from typing import Any
 
 from memory_governor.mem_policy import canonicalize_memory
 from memory_governor.schemas import ObserveRequest, Scope
+from memory_governor.scopes import scope_path
 
 
 def _scope_key(scope: Scope) -> str:
+    # Legacy flat key. Retained because existing rows were keyed this way.
     return f"{scope.kind}:{scope.id}"
 
 
@@ -67,9 +69,89 @@ class WorkingStore:
                 "CREATE INDEX IF NOT EXISTS idx_working_norm ON working_events(user_id, normalized_text, ts)"
             )
 
+            try:
+                conn.execute("ALTER TABLE working_events ADD COLUMN scope_path TEXT")
+            except sqlite3.OperationalError:
+                pass
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_working_scope_path ON working_events(scope_path)"
+            )
+            # Backfill scope_path from legacy scope_kind/scope_id for rows that predate the column
+            conn.execute(
+                "UPDATE working_events SET scope_path = scope_kind || ':' || scope_id "
+                "WHERE scope_path IS NULL AND scope_kind IS NOT NULL AND scope_id IS NOT NULL"
+            )
+
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS recall_stats (
+                    memory_id TEXT PRIMARY KEY,
+                    last_recalled_at INTEGER NOT NULL,
+                    recall_count INTEGER NOT NULL DEFAULT 0
+                );
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_recall_last ON recall_stats(last_recalled_at)"
+            )
+
+    def bump_recall(self, memory_id: str, now_ts: int | None = None) -> None:
+        """Increment recall_count and stamp last_recalled_at for memory_id."""
+        if not memory_id:
+            return
+        ts = int(now_ts or time.time())
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO recall_stats(memory_id, last_recalled_at, recall_count)
+                VALUES(?, ?, 1)
+                ON CONFLICT(memory_id) DO UPDATE SET
+                    last_recalled_at = excluded.last_recalled_at,
+                    recall_count = recall_stats.recall_count + 1
+                """,
+                (memory_id, ts),
+            )
+            conn.commit()
+
+    def get_recall_stats(self, memory_id: str) -> dict[str, Any] | None:
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT memory_id, last_recalled_at, recall_count FROM recall_stats WHERE memory_id=?",
+                (memory_id,),
+            ).fetchone()
+        if not row:
+            return None
+        return {
+            "memory_id": row[0],
+            "last_recalled_at": row[1],
+            "recall_count": row[2],
+        }
+
+    def get_recall_counts(self, memory_ids: list[str]) -> dict[str, int]:
+        """Batch lookup for ranking. Returns {memory_id: recall_count} for known ids only."""
+        if not memory_ids:
+            return {}
+        placeholders = ",".join("?" * len(memory_ids))
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                f"SELECT memory_id, recall_count FROM recall_stats WHERE memory_id IN ({placeholders})",
+                tuple(memory_ids),
+            ).fetchall()
+        return {row[0]: row[1] for row in rows}
+
+    def recently_recalled_ids(self, since_ts: int) -> list[str]:
+        """Memory IDs with last_recalled_at >= since_ts. Used by prune to skip hot memories."""
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT memory_id FROM recall_stats WHERE last_recalled_at >= ? ORDER BY last_recalled_at DESC",
+                (int(since_ts),),
+            ).fetchall()
+        return [row[0] for row in rows]
+
     def add_working(self, event: ObserveRequest) -> bool:
         """Returns True if inserted, False if deduped."""
         scope_key = _scope_key(event.scope)
+        spath = scope_path(event.scope)
         metadata_json = json.dumps(event.metadata or {})
         ts = int(event.timestamp or time.time())
         normalized = canonicalize_memory(event.text).lower()
@@ -95,8 +177,8 @@ class WorkingStore:
                 return False
             conn.execute(
                 """
-                INSERT INTO working_events (source, user_id, text, normalized_text, ts, scope_key, scope_kind, scope_id, event_id, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO working_events (source, user_id, text, normalized_text, ts, scope_key, scope_kind, scope_id, event_id, metadata, scope_path)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     event.source,
@@ -109,6 +191,7 @@ class WorkingStore:
                     event.scope.id,
                     event.metadata.get("event_id"),
                     metadata_json,
+                    spath,
                 ),
             )
             conn.commit()
@@ -120,18 +203,37 @@ class WorkingStore:
             conn.execute("DELETE FROM working_events WHERE ts < ?", (cutoff,))
             conn.commit()
 
-    def recent_for_scope(self, scope: Scope, limit: int = 100) -> list[dict[str, Any]]:
+    def recent_for_scope(
+        self, scope: Scope, limit: int = 100, include_ancestors: bool = False
+    ) -> list[dict[str, Any]]:
+        spath = scope_path(scope)
         with sqlite3.connect(self.db_path) as conn:
-            rows = conn.execute(
-                """
-                SELECT id, source, user_id, text, ts, scope_kind, scope_id, event_id, metadata
-                FROM working_events
-                WHERE scope_kind=? AND scope_id=?
-                ORDER BY ts DESC
-                LIMIT ?
-                """,
-                (scope.kind, scope.id, limit),
-            ).fetchall()
+            if include_ancestors:
+                from memory_governor.scopes import ancestor_paths
+                paths = ancestor_paths(spath)
+                placeholders = ",".join("?" * len(paths))
+                rows = conn.execute(
+                    f"""
+                    SELECT id, source, user_id, text, ts, scope_kind, scope_id, event_id, metadata
+                    FROM working_events
+                    WHERE scope_path IN ({placeholders})
+                    ORDER BY ts DESC
+                    LIMIT ?
+                    """,
+                    (*paths, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT id, source, user_id, text, ts, scope_kind, scope_id, event_id, metadata
+                    FROM working_events
+                    WHERE scope_path=?
+                       OR (scope_path IS NULL AND scope_kind=? AND scope_id=?)
+                    ORDER BY ts DESC
+                    LIMIT ?
+                    """,
+                    (spath, scope.kind, scope.id, limit),
+                ).fetchall()
         results = []
         for row in rows:
             results.append(
@@ -148,6 +250,38 @@ class WorkingStore:
                 }
             )
         return results
+
+    def distinct_scopes(self, prefix: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
+        with sqlite3.connect(self.db_path) as conn:
+            if prefix:
+                rows = conn.execute(
+                    """
+                    SELECT scope_path, scope_kind, scope_id, COUNT(*) AS c, MAX(ts) AS last_seen
+                    FROM working_events
+                    WHERE scope_path IS NOT NULL
+                      AND (scope_path = ? OR scope_path LIKE ? || '/%' OR scope_path LIKE '%/' || ?)
+                    GROUP BY scope_path
+                    ORDER BY last_seen DESC
+                    LIMIT ?
+                    """,
+                    (prefix, prefix, prefix, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT scope_path, scope_kind, scope_id, COUNT(*) AS c, MAX(ts) AS last_seen
+                    FROM working_events
+                    WHERE scope_path IS NOT NULL
+                    GROUP BY scope_path
+                    ORDER BY last_seen DESC
+                    LIMIT ?
+                    """,
+                    (limit,),
+                ).fetchall()
+        return [
+            {"path": row[0], "kind": row[1], "id": row[2], "count": row[3], "last_seen": row[4]}
+            for row in rows
+        ]
 
     def mark_consolidated(self, scope: Scope, up_to_ts: int) -> None:
         scope_key = _scope_key(scope)

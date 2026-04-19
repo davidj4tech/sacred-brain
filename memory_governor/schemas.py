@@ -6,8 +6,12 @@ from pydantic import BaseModel, Field
 
 
 class Scope(BaseModel):
-    kind: Literal["room", "user", "global"]
+    kind: Literal["room", "user", "global", "project", "topic"]
     id: str
+    parent: "Scope | None" = None
+
+
+Scope.model_rebuild()
 
 
 class ObserveRequest(BaseModel):
