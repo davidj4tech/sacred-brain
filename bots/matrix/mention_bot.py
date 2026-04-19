@@ -29,6 +29,7 @@ logging.basicConfig(level=logging.INFO)
 LOGGER = logging.getLogger("matrix-mention-bot")
 logging.getLogger("httpx").setLevel(logging.ERROR)
 logging.getLogger("nio").setLevel(logging.WARNING)
+logging.getLogger("nio.responses").setLevel(logging.ERROR)
 
 MATRIX_HOMESERVER = os.getenv("MATRIX_HOMESERVER", "https://matrix.ryer.org")
 MATRIX_USER = os.getenv("MATRIX_USER")
