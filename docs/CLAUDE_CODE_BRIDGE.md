@@ -20,16 +20,9 @@ Requires `jq`. Falls back to the manual snippet at `ops/claude/example-settings.
 
 ## Per-machine env
 
-Put in `~/.config/hippocampus.env` (the scripts source this if present):
+Put in `~/.config/hippocampus.env` (the scripts source this if present). The authoritative per-machine values live in [`user-config/machines.md`](user-config/machines.md) — use the Governor URL (`:54323`) column for the bridge.
 
-| Machine | `GOVERNOR_URL` | `GOVERNOR_USER_ID` |
-|---------|----------------|--------------------|
-| homer   | `http://127.0.0.1:54323` | `sam` |
-| sp4r    | `http://100.125.48.108:54323` | `sam` |
-| melr    | `http://100.125.48.108:54323` | `mel` |
-| p8ar    | `http://100.125.48.108:54323` | `sam` |
-
-`sam` and `mel` are bot personas; the `GOVERNOR_USER_ID` difference is why scopes are hierarchical (see `docs/MEMORY_GOVERNOR_v2.md` §3).
+Scopes are hierarchical because `GOVERNOR_USER_ID` varies across machines (see `docs/MEMORY_GOVERNOR_v2.md` §3 and [`user-config/personas.md`](user-config/personas.md)).
 
 ## Manual sync
 

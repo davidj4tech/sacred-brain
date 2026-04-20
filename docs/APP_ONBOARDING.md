@@ -16,16 +16,7 @@ Before touching any config, answer these. Getting them wrong later means re-tagg
 
 ### 1.1 What `user_id` will the app write under?
 
-Personas vs. humans — David's Sacred Brain convention (see `MEMORY.md` in agent memory stores):
-
-| `user_id` | What it represents | Typical use |
-|-----------|--------------------|-------------|
-| `david` | David-the-human | ChatGPT-extracted memories, cross-persona facts |
-| `sam` | Sam persona (bot) | Default for homer, sp4r, p8ar coding agents; Clawdbot |
-| `mel` | Mel persona (bot) | Default for melr |
-| *(new persona)* | If adding a new bot persona | Reserve the name first; don't retrofit later |
-
-Rule of thumb: **if a human might later want to attribute memories to themselves**, use a human `user_id`. If it's clearly the bot's voice/state, use a persona. Don't conflate.
+See [`user-config/personas.md`](user-config/personas.md) for the full convention (human vs. persona `user_id` values, when to pick which, and why they're not interchangeable).
 
 ### 1.2 Does the app need to *read*, *write*, or both?
 
@@ -35,14 +26,7 @@ Rule of thumb: **if a human might later want to attribute memories to themselves
 
 ### 1.3 What host is the app on?
 
-Drives the Hippocampus URL:
-
-| Host | `HIPPOCAMPUS_URL` | Notes |
-|------|-------------------|-------|
-| homer | `http://127.0.0.1:54321` | Services run here; always localhost |
-| sp4r, melr, p8ar | `http://100.125.48.108:54321` | Reach homer via Tailscale |
-| Other Tailscale node | `http://100.125.48.108:54321` | Same as above |
-| Non-Tailscale | Not supported in v1 | See "Future" at bottom |
+Drives the Hippocampus URL. Per-machine values live in [`user-config/machines.md`](user-config/machines.md). Non-Tailscale hosts aren't supported in v1 — see "Future" at bottom.
 
 ---
 

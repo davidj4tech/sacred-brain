@@ -36,13 +36,7 @@ The wrapper runs `governor_context.sh --target codex`, `exec`s `codex` with the 
 
 ## Per-machine env
 
-Same table as the Claude and OpenCode bridges. Put in `~/.config/hippocampus.env`:
-
-| Machine | `GOVERNOR_URL` | `GOVERNOR_USER_ID` |
-|---------|----------------|--------------------|
-| homer   | `http://127.0.0.1:54323` | `sam` |
-| sp4r    | `http://100.125.48.108:54323` | `sam` |
-| melr    | `http://100.125.48.108:54323` | `mel` |
+Same pattern as the Claude and OpenCode bridges. Put in `~/.config/hippocampus.env`; authoritative values in [`user-config/machines.md`](user-config/machines.md) — use the Governor URL (`:54323`) column.
 
 ## Outcomes
 

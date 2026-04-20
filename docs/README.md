@@ -51,10 +51,14 @@ Each bridge pre-pulls memory into a workspace file at session start and (for Cla
 - [`LOGGING_TO_HIPPOCAMPUS.md`](LOGGING_TO_HIPPOCAMPUS.md) — getting external apps to log into Hippocampus.
 - [`MEM0_SELF_HOSTING.md`](MEM0_SELF_HOSTING.md) / [`MEM0_ORG_ROAM.md`](MEM0_ORG_ROAM.md) — Mem0 backend notes.
 
-## Sam-specific
+## User config (deployment-specific)
 
-- [`SAM_LLM.md`](SAM_LLM.md) — Sam persona's routing / model config.
-- [`SAM_ASTROLOGY.md`](SAM_ASTROLOGY.md) — Sam astrology integration.
+Everything specific to David's Sacred Brain deployment — personas, machines, Sam-persona tunings. Siloed so platform docs stay deployment-agnostic. See [`user-config/README.md`](user-config/README.md) for the full index.
+
+- [`user-config/personas.md`](user-config/personas.md) — `user_id` conventions (human vs. persona).
+- [`user-config/machines.md`](user-config/machines.md) — per-machine Tailscale IPs, default `GOVERNOR_USER_ID`, and `HIPPOCAMPUS_URL` values.
+- [`user-config/SAM_LLM.md`](user-config/SAM_LLM.md) — Sam persona's LLM routing / model config.
+- [`user-config/SAM_ASTROLOGY.md`](user-config/SAM_ASTROLOGY.md) — Sam astrology integration.
 
 ---
 

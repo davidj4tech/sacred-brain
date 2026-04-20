@@ -38,13 +38,7 @@ See `ops/opencode/example-config.json` for the config stanza. OpenCode's hook ke
 
 ## Per-machine env
 
-Put in `~/.config/hippocampus.env` (the scripts source this if present):
-
-| Machine | `GOVERNOR_URL` | `GOVERNOR_USER_ID` |
-|---------|----------------|--------------------|
-| homer   | `http://127.0.0.1:54323` | `sam` |
-| sp4r    | `http://100.125.48.108:54323` | `sam` |
-| melr    | `http://100.125.48.108:54323` | `mel` |
+Put in `~/.config/hippocampus.env` (the scripts source this if present). The authoritative per-machine values live in [`user-config/machines.md`](user-config/machines.md) — use the Governor URL (`:54323`) column for the bridge.
 
 p8ar (phone) is skipped until OpenCode's Termux story is clearer.
 
