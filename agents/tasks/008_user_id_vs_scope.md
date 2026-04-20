@@ -2,14 +2,14 @@
 
 ## Context
 
-When wiring the MCP `log_memory` tool (task 007), we hit the question of which `user_id` coding-agent writes should land under. The chat personas (`sam`, `mel`) are wrong — coding writes aren't *about* those personas. The ChatGPT-import bucket (`david`) is also wrong — it conflates the human with a specific archive. We settled on `user_id="coding"` as a new, purpose-built bucket, passed via `SACRED_MCP_DEFAULT_WRITE_USER_ID` in the stdio launcher.
+When wiring the MCP `log_memory` tool (task 007), we hit the question of which `user_id` coding-agent writes should land under. The chat personas (`sam`, `mel`) are wrong — coding writes aren't *about* those personas. The ChatGPT-import bucket (`david`) is also wrong — it conflates the human with a specific archive. We settled on `user_id="coding_agent"` as a new, purpose-built bucket, passed via `SACRED_MCP_DEFAULT_WRITE_USER_ID` in the stdio launcher.
 
 That's a fine local answer, but it surfaces a deeper issue: **in a multi-persona, multi-context Sacred Brain, `user_id` is mostly vestigial**. The load-bearing dimension for both ranking and filtering is `scope` — `project:…/user:…/global:root` paths already carry persona *and* context *and* project. `user_id` is kept around because Hippocampus / Mem0 indexes by it at the storage layer, but semantically it's doing less work every iteration.
 
-The sharpest form of the mismatch: **coding agents aren't personas**. Claude Code, Codex, OpenCode have no self, no voice, no identity that would "own" a memory. They're david's hands. Chat personas (`sam`, `mel`) genuinely have character and a coherent "what would Sam remember"; coding tools don't. Invoking a new `coding` bucket just papers over the fact that these writes are really *david's* memories about *david's* work, and the natural `user_id="david"` is already occupied by the ChatGPT archive.
+The sharpest form of the mismatch: **coding agents aren't personas**. Claude Code, Codex, OpenCode have no self, no voice, no identity that would "own" a memory. They're david's hands. Chat personas (`sam`, `mel`) genuinely have character and a coherent "what would Sam remember"; coding tools don't. Invoking a new `coding_agent` bucket just papers over the fact that these writes are really *david's* memories about *david's* work, and the natural `user_id="david"` is already occupied by the ChatGPT archive.
 
 Symptoms of the debt:
-- Coding writes need their own bucket (`coding`) just to avoid poisoning chat-persona recall.
+- Coding writes need their own bucket (`coding_agent`) just to avoid poisoning chat-persona recall.
 - The ChatGPT archive bucket (`david`) is suppressed by an `MG_INCLUDE_ARCHIVE` filter — per-bucket hacks compensating for what should be a scope-filter concern.
 - Per-machine env plumbing (`GOVERNOR_USER_ID`, `HIPPOCAMPUS_USER_ID`) binds a persona that's increasingly just "which user_id to write under" rather than meaningful persona state.
 - Multi-human readiness (flagged in auto-memory) wants `human:<name>` above `user:<persona>` — but today `user_id` *is* the persona, so there's no natural layer above it.
@@ -18,11 +18,11 @@ Symptoms of the debt:
 
 This task is a **flagged design-debt ticket**, not a current implementation. It exists so the observation isn't lost. Opening it for real waits on concrete pressure:
 
-- Wanting to promote a memory from `user:coding` to `user:sam` and discovering there's no clean primitive.
+- Wanting to promote a memory from `user:coding_agent` to `user:sam` and discovering there's no clean primitive.
 - A multi-human access story becoming a real requirement rather than a hypothetical.
 - A third purpose-built bucket appearing (`docs`? `ops`?) and the "bucket per purpose" pattern starting to feel absurd.
 
-Until one of those bites, the `user_id="coding"` workaround is fine.
+Until one of those bites, the `user_id="coding_agent"` workaround is fine.
 
 ## When it's time, design questions to answer
 

@@ -122,7 +122,7 @@ async def log_memory(
         text: the memory content. Write it so a future session can understand
             it cold — include the *why*, not just the *what*.
         user_id: bucket owner. Defaults to the server's bound write-persona
-            (typically "coding" for dev-tool writes). Leave unset unless you
+            (typically "coding_agent" for dev-tool writes). Leave unset unless you
             have a specific reason to target another persona.
         kind: "semantic" (facts), "episodic" (events), or "procedural" (rules).
             Defaults to "semantic".

@@ -17,7 +17,7 @@ done
 # Writes from coding agents land in a dedicated bucket by default so they
 # don't pollute the chat-persona scopes (sam/mel). Override per-host by
 # exporting SACRED_MCP_DEFAULT_WRITE_USER_ID before invoking the launcher.
-: "${SACRED_MCP_DEFAULT_WRITE_USER_ID:=coding}"
+: "${SACRED_MCP_DEFAULT_WRITE_USER_ID:=coding_agent}"
 export SACRED_MCP_DEFAULT_WRITE_USER_ID
 
 # Prefer an in-tree checkout if present; fall back to importable install.

@@ -15,7 +15,7 @@ Exposes Sacred Brain as a Model Context Protocol server so any MCP-speaking agen
 
 ### Write
 
-- **`log_memory(text, user_id?, kind?, scope?, source?, metadata?)`** — deliberate save via Governor `/remember`. Defaults `user_id` to the server's bound **write-persona** (typically `coding`), which is deliberately separate from the read-persona so coding-agent writes don't pollute chat-persona scopes. `scope` defaults to `user:<user_id>`. Tagged `source="mcp:sacred-brain"` by default.
+- **`log_memory(text, user_id?, kind?, scope?, source?, metadata?)`** — deliberate save via Governor `/remember`. Defaults `user_id` to the server's bound **write-persona** (typically `coding_agent`), which is deliberately separate from the read-persona so coding-agent writes don't pollute chat-persona scopes. `scope` defaults to `user:<user_id>`. Tagged `source="mcp:sacred-brain"` by default.
 
 `record_observation` (event-stream writes) and `mark_outcome` (feedback for ranking) remain deferred to a later iteration; they're different shapes and deserve their own design pass.
 
@@ -78,7 +78,7 @@ The launcher sources `~/.config/hippocampus.env` first, so the names below all f
 | `SACRED_MCP_GOVERNOR_URL` | `GOVERNOR_URL` | Governor base URL |
 | `SACRED_MCP_API_KEY` | `HIPPOCAMPUS_API_KEY` | `X-API-Key` for both backends |
 | `SACRED_MCP_DEFAULT_USER_ID` | `HIPPOCAMPUS_USER_ID` / `GOVERNOR_USER_ID` | **Read** persona bound to this server instance |
-| `SACRED_MCP_DEFAULT_WRITE_USER_ID` | — | **Write** persona for `log_memory`. Launcher defaults to `coding`. |
+| `SACRED_MCP_DEFAULT_WRITE_USER_ID` | — | **Write** persona for `log_memory`. Launcher defaults to `coding_agent`. |
 
 Per-machine defaults for the backing URLs live in [`user-config/machines.md`](user-config/machines.md).
 
