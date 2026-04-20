@@ -28,6 +28,7 @@ Landing page for everything in `docs/`. Grouped by what you'd actually come here
 
 - [`API.md`](API.md) — Hippocampus endpoints (`/memories`, `/summaries`, …).
 - [`INGEST.md`](INGEST.md) — ingest service (`:54322`) for event-stream writes.
+- [`SACRED_MCP.md`](SACRED_MCP.md) — MCP server exposing `search_memory` + `recall_scope` to MCP-speaking agents.
 
 ## Coding-agent bridges
 

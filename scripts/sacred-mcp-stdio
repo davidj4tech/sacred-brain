@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# sacred-mcp-stdio — launcher for the Sacred Brain MCP server (stdio transport).
+#
+# Sources ~/.config/hippocampus.env if present so HIPPOCAMPUS_URL / _API_KEY /
+# _USER_ID flow through to the server without per-client duplication.
+#
+# Usage: add to your MCP client as:
+#   claude mcp add sacred-brain /home/<user>/.local/bin/sacred-mcp-stdio
+# Or in Claude Desktop claude_desktop_config.json:
+#   "sacred-brain": { "command": "/home/<user>/.local/bin/sacred-mcp-stdio" }
+set -euo pipefail
+
+for f in "$HOME/.config/hippocampus.env" "$HOME/.config/sacred-brain.env"; do
+  if [[ -r "$f" ]]; then set -a; . "$f"; set +a; break; fi
+done
+
+# Prefer an in-tree checkout if present; fall back to importable install.
+REPO="${SACRED_BRAIN_ROOT:-/opt/sacred-brain}"
+if [[ -d "$REPO/services/sacred_mcp" ]]; then
+  cd "$REPO"
+fi
+
+exec python3 -m services.sacred_mcp.stdio
