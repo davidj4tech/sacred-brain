@@ -11,6 +11,7 @@ from services.sacred_mcp.handlers import (
     SacredBrainConfig,
     _parse_scope_path,
     list_scopes,
+    log_memory,
     recall_scope,
     search_memory,
 )
@@ -116,6 +117,87 @@ def test_parse_scope_path_rejects_empty():
 def test_parse_scope_path_rejects_malformed():
     with pytest.raises(ValueError, match="missing ':'"):
         _parse_scope_path("project/user:sam")
+
+
+def test_log_memory_uses_write_default(monkeypatch):
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["path"] = request.url.path
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"status": "stored", "memory_id": "m42"})
+
+    _patch_client(monkeypatch, handler)
+
+    cfg = _cfg(default_user_id="sam", default_write_user_id="coding")
+    out = asyncio.run(log_memory(cfg, text="remember this"))
+
+    assert captured["path"] == "/remember"
+    body = captured["body"]
+    assert body["user_id"] == "coding"
+    assert body["text"] == "remember this"
+    assert body["kind"] == "semantic"
+    assert body["source"] == "mcp:sacred-brain"
+    assert body["scope"] == {"kind": "user", "id": "coding", "parent": None}
+    assert out["memory_id"] == "m42"
+    assert out["user_id"] == "coding"
+
+
+def test_log_memory_explicit_scope_overrides_default(monkeypatch):
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"status": "stored", "memory_id": "m7"})
+
+    _patch_client(monkeypatch, handler)
+
+    cfg = _cfg(default_user_id="sam", default_write_user_id="coding")
+    asyncio.run(
+        log_memory(
+            cfg,
+            text="t",
+            scope="project:sacred-brain/user:coding",
+            kind="episodic",
+        )
+    )
+    scope = captured["body"]["scope"]
+    assert scope["kind"] == "project"
+    assert scope["parent"]["kind"] == "user"
+
+
+def test_log_memory_prefers_write_default_over_read_default(monkeypatch):
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"status": "stored", "memory_id": "x"})
+
+    _patch_client(monkeypatch, handler)
+
+    cfg = _cfg(default_user_id="sam", default_write_user_id="coding")
+    asyncio.run(log_memory(cfg, text="t"))
+    assert captured["body"]["user_id"] == "coding"
+
+
+def test_log_memory_falls_back_to_read_default(monkeypatch):
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"status": "stored", "memory_id": "x"})
+
+    _patch_client(monkeypatch, handler)
+
+    cfg = _cfg(default_user_id="sam")
+    asyncio.run(log_memory(cfg, text="t"))
+    assert captured["body"]["user_id"] == "sam"
+
+
+def test_log_memory_requires_user_id_when_no_defaults():
+    cfg = _cfg()
+    with pytest.raises(ValueError, match="user_id required"):
+        asyncio.run(log_memory(cfg, text="t"))
 
 
 def test_list_scopes_forwards_prefix(monkeypatch):

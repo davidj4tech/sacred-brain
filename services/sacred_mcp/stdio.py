@@ -22,6 +22,7 @@ from mcp.server.fastmcp import FastMCP
 from services.sacred_mcp.handlers import (
     SacredBrainConfig,
     list_scopes as _list_scopes,
+    log_memory as _log_memory,
     recall_scope as _recall_scope,
     search_memory as _search_memory,
 )
@@ -47,11 +48,13 @@ def _load_config() -> SacredBrainConfig:
         or os.environ.get("HIPPOCAMPUS_USER_ID")
         or os.environ.get("GOVERNOR_USER_ID")
     )
+    default_write_user_id = os.environ.get("SACRED_MCP_DEFAULT_WRITE_USER_ID")
     return SacredBrainConfig(
         hippocampus_url=hippocampus_url,
         governor_url=governor_url,
         api_key=api_key,
         default_user_id=default_user_id,
+        default_write_user_id=default_write_user_id,
     )
 
 
@@ -97,6 +100,45 @@ async def recall_scope(
     """
     return await _recall_scope(
         _cfg, scope=scope, query=query, user_id=user_id, limit=limit
+    )
+
+
+@mcp.tool()
+async def log_memory(
+    text: str,
+    user_id: str | None = None,
+    kind: str = "semantic",
+    scope: str | None = None,
+    source: str = "mcp:sacred-brain",
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Save a memory to Sacred Brain for future recall.
+
+    Use when something is worth keeping across sessions: a user preference, a
+    decision and its reasoning, a non-obvious fact about the codebase, a lesson
+    from a bug. Prefer granular saves at moments of insight over bulk dumps.
+
+    Args:
+        text: the memory content. Write it so a future session can understand
+            it cold — include the *why*, not just the *what*.
+        user_id: bucket owner. Defaults to the server's bound write-persona
+            (typically "coding" for dev-tool writes). Leave unset unless you
+            have a specific reason to target another persona.
+        kind: "semantic" (facts), "episodic" (events), or "procedural" (rules).
+            Defaults to "semantic".
+        scope: slash-joined scope path like "project:sacred-brain/user:coding".
+            Defaults to "user:<user_id>" if omitted.
+        source: provenance tag; default "mcp:sacred-brain".
+        metadata: extra fields merged onto the memory record.
+    """
+    return await _log_memory(
+        _cfg,
+        text=text,
+        user_id=user_id,
+        kind=kind,
+        scope=scope,
+        source=source,
+        metadata=metadata,
     )
 
 

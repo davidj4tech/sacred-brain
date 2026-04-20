@@ -22,15 +22,18 @@ import httpx
 class SacredBrainConfig:
     """Connection settings for the REST backends.
 
-    `default_user_id` is only used when the transport has bound a persona
-    (stdio mode). HTTP/SSE transports should leave it None and require
-    `user_id` on every call.
+    `default_user_id` is the read-side fallback (e.g. "sam"). `default_write_user_id`
+    is the write-side fallback, deliberately separate because coding-agent writes
+    belong in a different bucket than chat-persona reads. Both only apply when the
+    transport has bound a persona (stdio mode); HTTP/SSE transports should leave
+    them None and require `user_id` on every call.
     """
 
     hippocampus_url: str
     governor_url: str
     api_key: str | None = None
     default_user_id: str | None = None
+    default_write_user_id: str | None = None
     timeout: float = 10.0
 
 
@@ -107,6 +110,47 @@ async def recall_scope(
         resp.raise_for_status()
         data = resp.json()
     return {"scope": scope, "user_id": uid, "results": data.get("results", [])}
+
+
+async def log_memory(
+    cfg: SacredBrainConfig,
+    text: str,
+    user_id: str | None = None,
+    kind: str = "semantic",
+    scope: str | None = None,
+    source: str = "mcp:sacred-brain",
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Deliberate write via Governor POST /remember.
+
+    Scope defaults to 'user:<user_id>' when omitted. The Governor canonicalizes
+    text, assigns salience=1.0 + confidence=0.95, and enqueues the Hippocampus
+    write through its durable queue.
+    """
+    uid = user_id or cfg.default_write_user_id or cfg.default_user_id
+    if not uid:
+        raise ValueError("user_id required (no write-default bound to this server)")
+    scope_obj = _parse_scope_path(scope) if scope else {"kind": "user", "id": uid, "parent": None}
+    payload: dict[str, Any] = {
+        "source": source,
+        "user_id": uid,
+        "text": text,
+        "kind": kind,
+        "scope": scope_obj,
+        "metadata": metadata or {},
+    }
+    url = f"{cfg.governor_url.rstrip('/')}/remember"
+    async with httpx.AsyncClient(timeout=cfg.timeout) as client:
+        resp = await client.post(url, json=payload, headers=_headers(cfg))
+        resp.raise_for_status()
+        data = resp.json()
+    return {
+        "status": data.get("status", "stored"),
+        "memory_id": data.get("memory_id"),
+        "user_id": uid,
+        "scope": scope or f"user:{uid}",
+        "kind": kind,
+    }
 
 
 async def list_scopes(cfg: SacredBrainConfig, prefix: str | None = None) -> dict[str, Any]:

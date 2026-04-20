@@ -14,6 +14,12 @@ for f in "$HOME/.config/hippocampus.env" "$HOME/.config/sacred-brain.env"; do
   if [[ -r "$f" ]]; then set -a; . "$f"; set +a; break; fi
 done
 
+# Writes from coding agents land in a dedicated bucket by default so they
+# don't pollute the chat-persona scopes (sam/mel). Override per-host by
+# exporting SACRED_MCP_DEFAULT_WRITE_USER_ID before invoking the launcher.
+: "${SACRED_MCP_DEFAULT_WRITE_USER_ID:=coding}"
+export SACRED_MCP_DEFAULT_WRITE_USER_ID
+
 # Prefer an in-tree checkout if present; fall back to importable install.
 REPO="${SACRED_BRAIN_ROOT:-/opt/sacred-brain}"
 if [[ -d "$REPO/services/sacred_mcp" ]]; then
