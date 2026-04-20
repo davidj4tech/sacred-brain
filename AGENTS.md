@@ -11,7 +11,7 @@ Two core services run under systemd:
 - **Hippocampus** (`:54321`) — FastAPI memory store, Mem0-backed with SQLite persistence. The authoritative store.
 - **Memory Governor** (`:54323`) — FastAPI policy/coordination layer in front of Hippocampus. Handles salience, consolidation, tiers (`safe`/`raw`), scopes, and durable write queueing.
 
-See `docs/ARCHITECTURE.md`, `docs/MEMORY_GOVERNOR.md`, and `docs/STACK.md` for the live picture. `CHANGELOG.md` is the timeline.
+See `docs/README.md` for the full docs index. `docs/ARCHITECTURE.md` + `docs/STACK.md` are the quickest on-ramp for the live picture; `CHANGELOG.md` is the timeline.
 
 ## Where work lives
 
