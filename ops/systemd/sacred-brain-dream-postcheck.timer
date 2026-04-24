@@ -1,0 +1,11 @@
+[Unit]
+Description=Fire the sacred-brain-dream post-check once, ~2 days after first nightly run
+
+[Timer]
+# One-shot: specific UTC date+time. OnCalendar with a specific date fires once.
+# Picked to run after two nightly dream sweeps (03:00 UTC on 2026-04-25 and 04-26).
+OnCalendar=2026-04-27 06:00:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

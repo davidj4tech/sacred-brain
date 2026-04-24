@@ -1,0 +1,60 @@
+[Unit]
+Description=One-shot post-check of the first nightly sacred-brain-dream run(s)
+After=sacred-brain-dream.timer
+
+[Service]
+Type=oneshot
+User=sacred
+Group=sacred
+ExecStart=/bin/bash -lc '\
+  set +e; \
+  OUT="/opt/sacred-brain/var/dreams/postcheck-$(date -u +%%Y-%%m-%%dT%%H%%M%%SZ).txt"; \
+  mkdir -p /opt/sacred-brain/var/dreams; \
+  { \
+    echo "# sacred-brain-dream post-check"; \
+    echo "generated: $(date -u +%%FT%%TZ)"; \
+    echo; \
+    echo "## timer status"; \
+    systemctl status sacred-brain-dream.timer --no-pager -l || true; \
+    echo; \
+    echo "## service status"; \
+    systemctl status sacred-brain-dream.service --no-pager -l || true; \
+    echo; \
+    echo "## journalctl -u sacred-brain-dream --since \"3 days ago\""; \
+    journalctl -u sacred-brain-dream.service --since "3 days ago" --no-pager || true; \
+    echo; \
+    echo "## ls /opt/sacred-brain/var/dreams/"; \
+    ls -la /opt/sacred-brain/var/dreams/ || true; \
+    echo; \
+    echo "## latest dream entry (if any)"; \
+    LATEST=$(ls -1t /opt/sacred-brain/var/dreams/*.md 2>/dev/null | head -1); \
+    if [ -n "$LATEST" ]; then \
+      echo "--- $LATEST ---"; \
+      head -200 "$LATEST"; \
+    else \
+      echo "(no dream .md files present)"; \
+    fi; \
+    echo; \
+    echo "## dream_promotions (last 7 days)"; \
+    DB=/opt/sacred-brain/var/memory-governor/state.db; \
+    if [ -r "$DB" ]; then \
+      sqlite3 "$DB" "SELECT memory_id, datetime(last_dreamed_at, \"unixepoch\") AS last, dream_count, printf(\"%%.3f\", last_score) AS score FROM dream_promotions WHERE last_dreamed_at >= strftime(\"%%s\", \"now\", \"-7 days\") ORDER BY last_dreamed_at DESC LIMIT 50;" || true; \
+      echo; \
+      echo "-- row count --"; \
+      sqlite3 "$DB" "SELECT COUNT(*) FROM dream_promotions;" || true; \
+    else \
+      echo "(state.db not readable at $DB)"; \
+    fi; \
+  } > "$OUT" 2>&1; \
+  echo "wrote $OUT"; \
+  ln -sfn "$(basename "$OUT")" /opt/sacred-brain/var/dreams/postcheck-latest.txt; \
+'
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/sacred-brain/var
+
+[Install]
+WantedBy=multi-user.target
