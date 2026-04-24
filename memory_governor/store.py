@@ -114,6 +114,21 @@ class WorkingStore:
 
             conn.execute(
                 """
+                CREATE TABLE IF NOT EXISTS dream_promotions (
+                    memory_id       TEXT PRIMARY KEY,
+                    last_dreamed_at INTEGER NOT NULL,
+                    dream_count     INTEGER NOT NULL DEFAULT 1,
+                    last_score      REAL    NOT NULL,
+                    last_signals    TEXT    NOT NULL DEFAULT '{}'
+                );
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_dream_last ON dream_promotions(last_dreamed_at)"
+            )
+
+            conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS memory_outcomes (
                     memory_id        TEXT PRIMARY KEY,
                     confidence_delta REAL NOT NULL DEFAULT 0.0,
@@ -246,6 +261,86 @@ class WorkingStore:
                 tuple(memory_ids),
             ).fetchall()
         return {row[0]: row[1] for row in rows}
+
+    def record_dream_promotion(
+        self,
+        memory_id: str,
+        score: float,
+        signals: dict | None = None,
+        now_ts: int | None = None,
+    ) -> None:
+        """Upsert a dream_promotions row. Used by the scored sweep."""
+        if not memory_id:
+            return
+        ts = int(now_ts or time.time())
+        signals_json = json.dumps(signals or {})
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO dream_promotions(
+                    memory_id, last_dreamed_at, dream_count, last_score, last_signals
+                )
+                VALUES(?, ?, 1, ?, ?)
+                ON CONFLICT(memory_id) DO UPDATE SET
+                    last_dreamed_at = excluded.last_dreamed_at,
+                    dream_count = dream_promotions.dream_count + 1,
+                    last_score = excluded.last_score,
+                    last_signals = excluded.last_signals
+                """,
+                (memory_id, ts, float(score), signals_json),
+            )
+            conn.commit()
+
+    def get_dream_promotion(self, memory_id: str) -> dict[str, Any] | None:
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT memory_id, last_dreamed_at, dream_count, last_score, last_signals "
+                "FROM dream_promotions WHERE memory_id=?",
+                (memory_id,),
+            ).fetchone()
+        if not row:
+            return None
+        try:
+            signals = json.loads(row[4] or "{}")
+        except json.JSONDecodeError:
+            signals = {}
+        return {
+            "memory_id": row[0],
+            "last_dreamed_at": row[1],
+            "dream_count": row[2],
+            "last_score": row[3],
+            "last_signals": signals,
+        }
+
+    def get_dream_promotions(self, memory_ids: list[str]) -> dict[str, dict[str, Any]]:
+        """Batch lookup keyed by memory_id. Missing ids are omitted."""
+        if not memory_ids:
+            return {}
+        placeholders = ",".join("?" * len(memory_ids))
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                f"SELECT memory_id, last_dreamed_at, dream_count, last_score "
+                f"FROM dream_promotions WHERE memory_id IN ({placeholders})",
+                tuple(memory_ids),
+            ).fetchall()
+        return {
+            r[0]: {
+                "last_dreamed_at": r[1],
+                "dream_count": r[2],
+                "last_score": r[3],
+            }
+            for r in rows
+        }
+
+    def dreamed_within(self, since_ts: int) -> list[str]:
+        """Memory IDs with last_dreamed_at >= since_ts. Used by prune protection."""
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT memory_id FROM dream_promotions WHERE last_dreamed_at >= ? "
+                "ORDER BY last_dreamed_at DESC",
+                (int(since_ts),),
+            ).fetchall()
+        return [r[0] for r in rows]
 
     def recently_recalled_ids(self, since_ts: int) -> list[str]:
         """Memory IDs with last_recalled_at >= since_ts. Used by prune to skip hot memories."""

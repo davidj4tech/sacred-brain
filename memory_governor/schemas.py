@@ -159,3 +159,5 @@ class PromoteExplainResponse(BaseModel):
     stats: CandidateStats
     result: ScoreResult
     metadata: dict[str, Any] = Field(default_factory=dict)
+    last_dreamed_at: int | None = None
+    dream_count: int = 0

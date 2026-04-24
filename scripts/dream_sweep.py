@@ -20,7 +20,11 @@ import sys
 
 from memory_governor.clients import HippocampusClient
 from memory_governor.config import load_config
-from memory_governor.dream import format_score_table, score_memories
+from memory_governor.dream import (
+    format_score_table,
+    record_passing_promotions,
+    score_memories,
+)
 from memory_governor.schemas import ScoreThresholds
 from memory_governor.store import WorkingStore
 
@@ -50,6 +54,10 @@ async def _run(args: argparse.Namespace) -> int:
         thresholds=thresholds,
     )
 
+    if args.apply:
+        recorded = record_passing_promotions(scored, store.record_dream_promotion)
+        print(f"Recorded {recorded} dream_promotions row(s).", file=sys.stderr)
+
     if args.json:
         payload = [
             {
@@ -68,18 +76,14 @@ async def _run(args: argparse.Namespace) -> int:
     else:
         print(format_score_table(scored))
 
-    if not args.dry_run:
-        print("(promote step not yet implemented — dry-run is the only path)", file=sys.stderr)
-        return 2
-
     return 0
 
 
 def main() -> int:
     p = argparse.ArgumentParser(description="Dreaming sweep runner")
     p.add_argument("--user-id", required=True, help="Hippocampus user_id to sweep")
-    p.add_argument("--dry-run", action="store_true", default=True,
-                   help="Score + report only; do not promote (default)")
+    p.add_argument("--apply", action="store_true",
+                   help="Write dream_promotions rows for passing memories (default: dry-run)")
     p.add_argument("--limit", type=int, default=500,
                    help="Max memories to fetch from Hippocampus (default 500)")
     p.add_argument("--json", action="store_true", help="Emit JSON instead of table")

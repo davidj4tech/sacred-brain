@@ -66,6 +66,12 @@ def fetch_protected_ids() -> set[str]:
         protected.update(resp.json().get("grace_memory_ids", []))
     except Exception:
         pass
+    try:
+        resp = requests.get(f"{GOVERNOR_URL}/dream_stats", timeout=5)
+        resp.raise_for_status()
+        protected.update(resp.json().get("memory_ids", []))
+    except Exception:
+        pass
     return protected
 
 

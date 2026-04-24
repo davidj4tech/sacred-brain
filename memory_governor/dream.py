@@ -67,6 +67,26 @@ def score_memories(
     return scored
 
 
+def record_passing_promotions(
+    scored: Iterable[ScoredMemory],
+    recorder: Callable[[str, float, dict], None],
+    now_ts: float | None = None,
+) -> int:
+    """Persist a dream_promotions row for each memory that passed the gates.
+
+    `recorder(memory_id, score, signals_json)` is injected (usually
+    `WorkingStore.record_dream_promotion`). Returns the count recorded.
+    Pure in the sense that the side effect is explicit and swappable.
+    """
+    count = 0
+    for s in scored:
+        if not s.result.passed:
+            continue
+        recorder(s.memory_id, s.result.score, s.result.weighted.model_dump())
+        count += 1
+    return count
+
+
 SACRED_BRAIN_DREAMS_DEFAULT = Path("/opt/sacred-brain/var/dreams")
 
 

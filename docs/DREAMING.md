@@ -95,9 +95,46 @@ PYTHONPATH=/opt/sacred-brain python scripts/dream_sweep.py \
 
 Flags:
 
+- `--apply` — actually persist `dream_promotions` rows for memories that
+  pass the gates (default is dry-run)
 - `--json` — emit JSON instead of the table
 - `--min-score`, `--min-recall-count`, `--min-unique-queries` — override gates
 - `--limit` — max memories to fetch (default 500)
+
+## The dream_promotions ledger
+
+Hippocampus exposes no PATCH endpoint, so the sweep does not mutate
+memories. Instead it records a governor-side ledger in SQLite:
+
+```
+dream_promotions(memory_id, last_dreamed_at, dream_count, last_score, last_signals)
+```
+
+Two consumers read it:
+
+1. **`/recall` ranking** adds a small `dream_boost = last_score * 0.05`
+   to memories dreamed within the last 7 days. Both values are
+   configurable via `MG_DREAM_BOOST_WEIGHT` and `MG_DREAM_BOOST_WINDOW_DAYS`.
+2. **Auto-prune protection** — the prune script reads `GET /dream_stats`
+   and adds those ids to its protected set, same pattern as
+   `/recall_stats`. Default protection window is
+   `MG_DREAM_PROTECT_DAYS=14`.
+
+`/promote-explain` responses also include `last_dreamed_at` and
+`dream_count` so you can see a memory's dreaming history without a
+separate lookup.
+
+## Env vars added by Dreaming
+
+| Var                          | Default | Purpose                             |
+|------------------------------|---------|-------------------------------------|
+| `MG_DREAM_MIN_SCORE`         | `0.35`  | Gate: minimum total score           |
+| `MG_DREAM_MIN_RECALL_COUNT`  | `2`     | Gate: minimum recall count          |
+| `MG_DREAM_MIN_UNIQUE_QUERIES`| `2`     | Gate: minimum distinct queries      |
+| `MG_DREAM_PROTECT_DAYS`      | `14`    | Prune protection window             |
+| `MG_DREAM_BOOST_WEIGHT`      | `0.05`  | Weight of dream_boost in `/recall`  |
+| `MG_DREAM_BOOST_WINDOW_DAYS` | `7`     | How long a promotion boosts recall  |
+| `DREAMS_OUTPUT_PATH`         | —       | Override for `DREAMS.md` path       |
 
 ## Dream output path resolution
 

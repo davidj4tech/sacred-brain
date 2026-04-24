@@ -396,8 +396,12 @@ async def recall(payload: RecallRequest) -> RecallResponse:
 
     memory_ids = [item["memory_id"] for item in filtered if item.get("memory_id")]
     recall_counts = runtime.store.get_recall_counts(memory_ids) if memory_ids else {}
+    dream_promotions = runtime.store.get_dream_promotions(memory_ids) if memory_ids else {}
 
     now = time.time()
+    dream_window_ts = now - runtime.cfg.dream_boost_window_days * 86400
+    dream_weight = runtime.cfg.dream_boost_weight
+
     def _score(item: dict[str, Any]) -> float:
         conf = item.get("confidence") or 0.5
         ts_val = item.get("timestamp")
@@ -413,12 +417,17 @@ async def recall(payload: RecallRequest) -> RecallResponse:
         exact_bonus = 0.05 if (
             filter_scope_path is not None and item.get("scope_path") == filter_scope_path
         ) else 0.0
+        dream_row = dream_promotions.get(mid) if mid else None
+        dream_boost = 0.0
+        if dream_row and (dream_row.get("last_dreamed_at") or 0) >= dream_window_ts:
+            dream_boost = float(dream_row.get("last_score") or 0.0)
         return (
             conf * 0.6
             + recency * 0.2
             + recall_boost * 0.1
             + outcome_bonus * 0.1
             + exact_bonus
+            + dream_boost * dream_weight
         )
 
     scored = [(item, _score(item)) for item in filtered]
@@ -512,13 +521,28 @@ async def promote_explain(payload: PromoteExplainRequest) -> PromoteExplainRespo
     result = score_candidate(stats, payload.thresholds)
 
     meta = mem.get("metadata") or {}
+    dream_row = runtime.store.get_dream_promotion(payload.memory_id)
     return PromoteExplainResponse(
         memory_id=payload.memory_id,
         text=mem.get("text") or mem.get("memory") or "",
         stats=stats,
         result=result,
         metadata=meta,
+        last_dreamed_at=(dream_row or {}).get("last_dreamed_at"),
+        dream_count=(dream_row or {}).get("dream_count") or 0,
     )
+
+
+@app.get("/dream_stats")
+async def dream_stats(since_days: int | None = None) -> dict[str, Any]:
+    """Memory IDs dreamed within `since_days` (default MG_DREAM_PROTECT_DAYS).
+
+    Consumed by prune to skip memories that recently passed the scored sweep.
+    """
+    days = since_days if since_days is not None else runtime.cfg.dream_protect_days
+    since_ts = int(time.time() - days * 86400)
+    ids = runtime.store.dreamed_within(since_ts)
+    return {"since_days": days, "since_ts": since_ts, "memory_ids": ids}
 
 
 @app.post("/consolidate", response_model=ConsolidateResponse)
