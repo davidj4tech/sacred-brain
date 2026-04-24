@@ -123,6 +123,117 @@ Retain existing `memory-governor-consolidate.timer` (hourly, rule-based) for now
 - Manual: trigger the timer (`systemctl start sacred-brain-dream.service`) → `var/dreams/latest.md` exists with today's frontmatter and ~300+ words of narrative.
 - Manual: unset `DREAMS_OUTPUT_PATH`, set `dreams.output_path` in config, re-run → writes to the config path. Repeat with env var set — env wins.
 
+## Appendix: what "promote" means in our substrate
+
+OpenClaw's promote step writes to `MEMORY.md` — the short-term → long-term
+boundary is a filesystem boundary. Sacred-brain has no such boundary:
+every observe above salience threshold already lands in Hippocampus at
+write time. So Dreaming's scored "promote" is doing something different
+and we have to decide what.
+
+**Hard constraint**: Hippocampus exposes no PATCH endpoint. Confirmed by
+reading `memory_governor/clients.py` — only `post_memory`, `get_memory`,
+`delete_memory`, `query_memories`, `list_memories`. Any design that
+requires mutating a memory's metadata in place is off the table unless
+we extend Hippocampus, which is out of scope.
+
+### Options considered
+
+**A. Confidence bump in Hippocampus.** Blocked — no PATCH.
+
+**B. Kind promotion (`candidate → semantic`).** Blocked — no PATCH.
+
+**C. `promoted=true` tag in metadata.** Blocked — no PATCH.
+
+**D. Re-insert with updated metadata.** Viable but creates duplicates and
+breaks `memory_id` stability. Reject.
+
+**E. Pure reporting, no mutation.** Sweep scores and the scores only show
+up in `/promote-explain` and `DREAMS.md`. Simple but then the score
+doesn't actually influence anything the system does at recall time — the
+sweep becomes a read-only diagnostic, and the scoring work we just built
+has no teeth.
+
+**F. Governor-side promotion ledger (recommended).** Keep promotion state
+in sacred-brain's own SQLite, not in Hippocampus. A new table records
+which memories passed the sweep, when, and with what score. Recall and
+auto-prune read this table as a side input — same pattern Task 001
+already uses with `recall_stats`.
+
+### Recommendation: Option F
+
+New table:
+
+```sql
+CREATE TABLE IF NOT EXISTS dream_promotions (
+    memory_id      TEXT PRIMARY KEY,
+    last_dreamed_at INTEGER NOT NULL,
+    dream_count    INTEGER NOT NULL DEFAULT 1,
+    last_score     REAL    NOT NULL,
+    last_signals   TEXT    NOT NULL DEFAULT '{}'  -- JSON, for audit/debugging
+);
+CREATE INDEX idx_dream_last ON dream_promotions(last_dreamed_at);
+```
+
+Sweep behavior:
+
+- For each memory that passes the gates: `UPSERT` into `dream_promotions`
+  with `last_dreamed_at = now`, `dream_count += 1`, `last_score = score`,
+  `last_signals = json(weighted)`.
+- Log one `dream_score` entry per memory to `stream_log` (both pass and
+  fail) so the digest/reflect step has raw material to summarize.
+- Nothing else mutates.
+
+Consumers of the ledger:
+
+1. **Recall ranking** (`app.py:_score`): add a small boost
+   `dream_boost = last_score if dreamed_within_7d else 0`, weighted at
+   `0.05`. Keeps the signal small so it doesn't drown out confidence /
+   recency / recall_count.
+2. **Auto-prune protection**: the prune timer already skips rows with
+   recent `last_recalled_at`. Extend the skip query to also protect
+   memories with `last_dreamed_at >= now - MG_DREAM_PROTECT_DAYS` (default
+   14). This gives dreamed-well memories a durability floor even if they
+   haven't been explicitly recalled in that window.
+3. **`/promote-explain`** already returns the score; add
+   `last_dreamed_at`, `dream_count` to the response so callers can see
+   the memory's dreaming history.
+
+### Why F is the right call
+
+- **Zero external dependency change.** No Hippocampus schema bump, no PATCH
+  endpoint, no migration.
+- **Reversible.** Drop the table and the feature is gone. The memories
+  themselves are untouched.
+- **Matches existing pattern.** Task 001 already established "aggregate
+  governor-side, read as side input" for `recall_stats`. This is the same
+  shape, which keeps the mental model simple and the code consistent.
+- **Composable with future work.** If Hippocampus later grows a PATCH
+  endpoint, we can add metadata writes on top without removing the
+  ledger — operators who want pure-report behavior just don't read the
+  table.
+- **Bounded blast radius.** Worst-case bug gives scored memories a 5%
+  recall boost or a 14-day prune reprieve. Nothing catastrophic.
+
+### Extra requirements implied by F
+
+- New env var `MG_DREAM_PROTECT_DAYS` (default `14`).
+- Store helpers: `record_dream_promotion(memory_id, score, signals_json)`,
+  `get_dream_promotion(memory_id)`, `get_dream_promotions(memory_ids)`
+  (batch), `dreamed_within(since_ts)` (for prune).
+- `_score` in `app.py:/recall` batch-fetches dream_promotions alongside
+  the existing `get_recall_counts` call (one extra dict, no per-row query).
+- `/promote-explain` response gains `last_dreamed_at` and `dream_count`.
+- Tests: `tests/test_dream_promotions.py` for the new store helpers;
+  extend `test_dream_sweep.py` with a non-dry-run case that asserts the
+  ledger got written.
+
+### Non-goals (deferred)
+
+- Promoting to a different Hippocampus "kind" — wait until PATCH exists.
+- Outcome signal as a 7th score input — Task 004 territory.
+- Cross-scope reflection — not needed until workspaces demand it.
+
 ## Open follow-ups (not in this task)
 
 - Fold the hourly `/consolidate` into the nightly sweep once the scored path is proven.
