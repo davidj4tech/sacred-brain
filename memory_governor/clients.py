@@ -108,6 +108,23 @@ class HippocampusClient:
                 return mem
         return None
 
+    async def list_memories(
+        self, user_id: str, limit: int = 500
+    ) -> list[dict[str, Any]]:
+        """List all memories for user_id (up to limit). Used by dreaming sweeps."""
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            try:
+                resp = await client.get(
+                    f"{self.hippo_url}/memories/{user_id}",
+                    params={"limit": limit},
+                    headers=self._headers(),
+                )
+                resp.raise_for_status()
+                return resp.json().get("memories", [])
+            except Exception as exc:
+                LOGGER.error("Hippocampus list failed: %s", exc)
+                return []
+
     async def delete_memory(self, memory_id: str) -> bool:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             try:
