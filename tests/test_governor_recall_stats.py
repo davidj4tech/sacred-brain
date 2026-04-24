@@ -66,3 +66,35 @@ def test_recently_recalled_ids(store: WorkingStore) -> None:
 
 def test_get_recall_stats_missing(store: WorkingStore) -> None:
     assert store.get_recall_stats("nonexistent") is None
+
+
+def test_bump_recall_records_aggregates(store: WorkingStore) -> None:
+    day_1 = 1_700_000_000  # 2023-11-14 UTC
+    day_2 = day_1 + 86400 * 2
+    store.bump_recall("mem-x", now_ts=day_1, query_hash="q-alpha", rerank_score=0.6)
+    store.bump_recall("mem-x", now_ts=day_1, query_hash="q-alpha", rerank_score=0.4)
+    store.bump_recall("mem-x", now_ts=day_2, query_hash="q-beta", rerank_score=0.8)
+    stats = store.get_recall_stats("mem-x")
+    assert stats["recall_count"] == 3
+    assert stats["sum_relevance"] == pytest.approx(1.8)
+    assert stats["avg_relevance"] == pytest.approx(0.6)
+    assert stats["distinct_queries"] == 2  # q-alpha deduped
+    assert stats["distinct_days"] == 2
+
+
+def test_bump_recall_empty_aggregates_default(store: WorkingStore) -> None:
+    store.bump_recall("mem-y")
+    stats = store.get_recall_stats("mem-y")
+    assert stats["sum_relevance"] == 0.0
+    assert stats["avg_relevance"] == 0.0
+    assert stats["distinct_queries"] == 0
+    assert stats["distinct_days"] == 1  # today
+
+
+def test_query_hash_cap(store: WorkingStore) -> None:
+    ts = 1_700_000_000
+    for i in range(WorkingStore.QUERY_HASHES_CAP + 5):
+        store.bump_recall("mem-z", now_ts=ts + i, query_hash=f"q{i}", rerank_score=0.5)
+    stats = store.get_recall_stats("mem-z")
+    assert stats["recall_count"] == WorkingStore.QUERY_HASHES_CAP + 5
+    assert stats["distinct_queries"] == WorkingStore.QUERY_HASHES_CAP

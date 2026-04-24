@@ -102,6 +102,15 @@ class WorkingStore:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_recall_last ON recall_stats(last_recalled_at)"
             )
+            for col, ddl in (
+                ("sum_relevance", "ALTER TABLE recall_stats ADD COLUMN sum_relevance REAL NOT NULL DEFAULT 0"),
+                ("query_hashes", "ALTER TABLE recall_stats ADD COLUMN query_hashes TEXT NOT NULL DEFAULT '[]'"),
+                ("recall_days", "ALTER TABLE recall_stats ADD COLUMN recall_days TEXT NOT NULL DEFAULT '[]'"),
+            ):
+                try:
+                    conn.execute(ddl)
+                except sqlite3.OperationalError:
+                    pass
 
             conn.execute(
                 """
@@ -121,36 +130,109 @@ class WorkingStore:
                 "CREATE INDEX IF NOT EXISTS idx_outcomes_last_ts ON memory_outcomes(last_outcome_ts)"
             )
 
-    def bump_recall(self, memory_id: str, now_ts: int | None = None) -> None:
-        """Increment recall_count and stamp last_recalled_at for memory_id."""
+    QUERY_HASHES_CAP = 20
+    RECALL_DAYS_CAP = 30
+
+    @staticmethod
+    def _append_capped(json_arr: str, value: str, cap: int) -> str:
+        try:
+            arr = json.loads(json_arr or "[]")
+            if not isinstance(arr, list):
+                arr = []
+        except json.JSONDecodeError:
+            arr = []
+        if value in arr:
+            return json.dumps(arr)
+        arr.append(value)
+        if len(arr) > cap:
+            arr = arr[-cap:]
+        return json.dumps(arr)
+
+    def bump_recall(
+        self,
+        memory_id: str,
+        now_ts: int | None = None,
+        query_hash: str | None = None,
+        rerank_score: float | None = None,
+    ) -> None:
+        """Increment recall_count and stamp last_recalled_at for memory_id.
+
+        When query_hash / rerank_score are supplied, also update the aggregates
+        used by Dreaming's scoring signals (relevance, query_diversity,
+        consolidation).
+        """
         if not memory_id:
             return
         ts = int(now_ts or time.time())
+        day = time.strftime("%Y-%m-%d", time.gmtime(ts))
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 """
-                INSERT INTO recall_stats(memory_id, last_recalled_at, recall_count)
-                VALUES(?, ?, 1)
+                INSERT INTO recall_stats(
+                    memory_id, last_recalled_at, recall_count,
+                    sum_relevance, query_hashes, recall_days
+                )
+                VALUES(?, ?, 1, ?, ?, ?)
                 ON CONFLICT(memory_id) DO UPDATE SET
                     last_recalled_at = excluded.last_recalled_at,
-                    recall_count = recall_stats.recall_count + 1
+                    recall_count = recall_stats.recall_count + 1,
+                    sum_relevance = recall_stats.sum_relevance + excluded.sum_relevance
                 """,
-                (memory_id, ts),
+                (
+                    memory_id,
+                    ts,
+                    float(rerank_score or 0.0),
+                    json.dumps([query_hash] if query_hash else []),
+                    json.dumps([day]),
+                ),
             )
+            # The ON CONFLICT path above can't cap-append JSON arrays in SQL,
+            # so re-read + write them back when this is not a first insert.
+            row = conn.execute(
+                "SELECT query_hashes, recall_days, recall_count FROM recall_stats WHERE memory_id=?",
+                (memory_id,),
+            ).fetchone()
+            if row and row[2] > 1:
+                new_hashes = (
+                    self._append_capped(row[0], query_hash, self.QUERY_HASHES_CAP)
+                    if query_hash
+                    else row[0]
+                )
+                new_days = self._append_capped(row[1], day, self.RECALL_DAYS_CAP)
+                conn.execute(
+                    "UPDATE recall_stats SET query_hashes=?, recall_days=? WHERE memory_id=?",
+                    (new_hashes, new_days, memory_id),
+                )
             conn.commit()
 
     def get_recall_stats(self, memory_id: str) -> dict[str, Any] | None:
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(
-                "SELECT memory_id, last_recalled_at, recall_count FROM recall_stats WHERE memory_id=?",
+                "SELECT memory_id, last_recalled_at, recall_count, "
+                "sum_relevance, query_hashes, recall_days "
+                "FROM recall_stats WHERE memory_id=?",
                 (memory_id,),
             ).fetchone()
         if not row:
             return None
+        try:
+            hashes = json.loads(row[4] or "[]")
+        except json.JSONDecodeError:
+            hashes = []
+        try:
+            days = json.loads(row[5] or "[]")
+        except json.JSONDecodeError:
+            days = []
+        recall_count = row[2] or 0
+        sum_relevance = row[3] or 0.0
         return {
             "memory_id": row[0],
             "last_recalled_at": row[1],
-            "recall_count": row[2],
+            "recall_count": recall_count,
+            "sum_relevance": sum_relevance,
+            "avg_relevance": (sum_relevance / recall_count) if recall_count else 0.0,
+            "distinct_queries": len(hashes),
+            "distinct_days": len(days),
         }
 
     def get_recall_counts(self, memory_ids: list[str]) -> dict[str, int]:

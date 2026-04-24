@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import time
 from typing import Any
@@ -79,8 +80,18 @@ class GovernorRuntime:
             self._queue_rt.put_nowait(job)
         return job["id"]
 
-    def enqueue_recall_hit(self, memory_id: str) -> str:
-        job = self.queue.enqueue({"type": "recall_hit", "payload": {"memory_id": memory_id}})
+    def enqueue_recall_hit(
+        self,
+        memory_id: str,
+        query_hash: str | None = None,
+        rerank_score: float | None = None,
+    ) -> str:
+        payload: dict[str, Any] = {"memory_id": memory_id}
+        if query_hash:
+            payload["query_hash"] = query_hash
+        if rerank_score is not None:
+            payload["rerank_score"] = float(rerank_score)
+        job = self.queue.enqueue({"type": "recall_hit", "payload": payload})
         if self._queue_rt:
             self._queue_rt.put_nowait(job)
         return job["id"]
@@ -105,9 +116,14 @@ class GovernorRuntime:
             LOGGER.warning("Memory write to Hippocampus failed")
             return False
         if job_type == "recall_hit":
-            mem_id = inner.get("payload", {}).get("memory_id")
+            p = inner.get("payload", {})
+            mem_id = p.get("memory_id")
             if mem_id:
-                self.store.bump_recall(mem_id)
+                self.store.bump_recall(
+                    mem_id,
+                    query_hash=p.get("query_hash"),
+                    rerank_score=p.get("rerank_score"),
+                )
             return True
         if job_type == "delete_memory":
             mem_id = inner.get("payload", {}).get("memory_id")
@@ -395,17 +411,23 @@ async def recall(payload: RecallRequest) -> RecallResponse:
             + exact_bonus
         )
 
-    ranked = sorted(filtered, key=_score, reverse=True)
-    top = ranked[: payload.k]
+    scored = [(item, _score(item)) for item in filtered]
+    scored.sort(key=lambda pair: pair[1], reverse=True)
+    top = scored[: payload.k]
 
-    for item in top:
+    query_hash = (
+        hashlib.sha1(payload.query.strip().lower().encode("utf-8")).hexdigest()[:16]
+        if payload.query.strip()
+        else None
+    )
+    for item, item_score in top:
         mid = item.get("memory_id")
         if mid:
-            runtime.enqueue_recall_hit(mid)
+            runtime.enqueue_recall_hit(mid, query_hash=query_hash, rerank_score=item_score)
 
     results = [
         {k: v for k, v in item.items() if k not in ("memory_id", "scope_path", "last_outcome")}
-        for item in top
+        for item, _s in top
     ]
     return RecallResponse(results=results)
 

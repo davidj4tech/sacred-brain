@@ -109,3 +109,39 @@ class ConsolidateResponse(BaseModel):
     status: str
     written: ConsolidateCounts
     skipped: int = 0
+
+
+class ScoreSignals(BaseModel):
+    frequency: float = 0.0
+    relevance: float = 0.0
+    query_diversity: float = 0.0
+    recency: float = 0.0
+    consolidation: float = 0.0
+    conceptual_richness: float = 0.0
+
+
+class ScoreResult(BaseModel):
+    score: float
+    signals: ScoreSignals
+    weighted: ScoreSignals
+    passed: bool
+    threshold: float
+    reasons: list[str] = Field(default_factory=list)
+
+
+class CandidateStats(BaseModel):
+    """Inputs to score_candidate gathered from store + stream_log."""
+
+    recall_count: int = 0
+    avg_relevance: float = 0.0
+    distinct_queries: int = 0
+    distinct_days: int = 0
+    age_days: float = 0.0
+    tag_count: int = 0
+    scope_depth: int = 1
+
+
+class ScoreThresholds(BaseModel):
+    min_score: float = 0.35
+    min_recall_count: int = 2
+    min_unique_queries: int = 2

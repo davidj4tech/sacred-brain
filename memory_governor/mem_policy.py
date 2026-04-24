@@ -4,7 +4,15 @@ import os
 import re
 from typing import Any
 
-from memory_governor.schemas import ObserveRequest
+import math
+
+from memory_governor.schemas import (
+    CandidateStats,
+    ObserveRequest,
+    ScoreResult,
+    ScoreSignals,
+    ScoreThresholds,
+)
 
 
 def _keyword_score(text: str) -> float:
@@ -178,3 +186,97 @@ def consolidate_events(
         "semantic": semantic,
         "procedural": procedural,
     }
+
+
+SCORE_WEIGHTS = ScoreSignals(
+    frequency=0.24,
+    relevance=0.30,
+    query_diversity=0.15,
+    recency=0.15,
+    consolidation=0.10,
+    conceptual_richness=0.06,
+)
+
+RECENCY_HALFLIFE_DAYS = 14.0
+FREQUENCY_SATURATION = 10  # recall_count at which frequency ≈ 1.0
+DIVERSITY_SATURATION = 5
+CONSOLIDATION_SATURATION = 7
+RICHNESS_SATURATION = 6
+
+
+def _log_saturate(value: float, saturation: int) -> float:
+    if value <= 0:
+        return 0.0
+    return min(1.0, math.log2(1.0 + value) / math.log2(1.0 + saturation))
+
+
+def _linear_saturate(value: float, saturation: int) -> float:
+    if value <= 0:
+        return 0.0
+    return min(1.0, value / saturation)
+
+
+def score_candidate(
+    stats: CandidateStats,
+    thresholds: ScoreThresholds | None = None,
+) -> ScoreResult:
+    """Compute a weighted score for a promotion candidate.
+
+    Pure function. Inputs are pre-aggregated (see CandidateStats). Callers are
+    responsible for gathering recall_count, avg_relevance, etc. from store and
+    stream_log.
+    """
+
+    thresholds = thresholds or ScoreThresholds()
+
+    signals = ScoreSignals(
+        frequency=_log_saturate(stats.recall_count, FREQUENCY_SATURATION),
+        relevance=max(0.0, min(1.0, stats.avg_relevance)),
+        query_diversity=_linear_saturate(stats.distinct_queries, DIVERSITY_SATURATION),
+        recency=math.exp(-stats.age_days / RECENCY_HALFLIFE_DAYS) if stats.age_days >= 0 else 0.0,
+        consolidation=_linear_saturate(stats.distinct_days, CONSOLIDATION_SATURATION),
+        conceptual_richness=_linear_saturate(
+            stats.tag_count + max(0, stats.scope_depth - 1), RICHNESS_SATURATION
+        ),
+    )
+
+    weighted = ScoreSignals(
+        frequency=signals.frequency * SCORE_WEIGHTS.frequency,
+        relevance=signals.relevance * SCORE_WEIGHTS.relevance,
+        query_diversity=signals.query_diversity * SCORE_WEIGHTS.query_diversity,
+        recency=signals.recency * SCORE_WEIGHTS.recency,
+        consolidation=signals.consolidation * SCORE_WEIGHTS.consolidation,
+        conceptual_richness=signals.conceptual_richness * SCORE_WEIGHTS.conceptual_richness,
+    )
+
+    score = (
+        weighted.frequency
+        + weighted.relevance
+        + weighted.query_diversity
+        + weighted.recency
+        + weighted.consolidation
+        + weighted.conceptual_richness
+    )
+
+    reasons: list[str] = []
+    if score < thresholds.min_score:
+        reasons.append(f"score {score:.3f} below min_score {thresholds.min_score:.3f}")
+    if stats.recall_count < thresholds.min_recall_count:
+        reasons.append(
+            f"recall_count {stats.recall_count} below min_recall_count {thresholds.min_recall_count}"
+        )
+    if stats.distinct_queries < thresholds.min_unique_queries:
+        reasons.append(
+            f"distinct_queries {stats.distinct_queries} below min_unique_queries {thresholds.min_unique_queries}"
+        )
+
+    passed = not reasons
+
+    return ScoreResult(
+        score=round(score, 4),
+        signals=signals,
+        weighted=weighted,
+        passed=passed,
+        threshold=thresholds.min_score,
+        reasons=reasons,
+    )
