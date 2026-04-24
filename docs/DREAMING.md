@@ -1,0 +1,137 @@
+# Dreaming (in progress)
+
+Sacred Brain's memory consolidation sweep. Replaces the regex-bucket
+heuristics in `mem_policy.consolidate_events` with a weighted multi-signal
+score and (eventually) a nightly reflection pass.
+
+The shape is borrowed from OpenClaw's `dreaming` feature, adapted to our
+substrate: Hippocampus + SQLite rather than markdown files, explicit scopes,
+systemd timers instead of a single cron. Phase names (Light / REM / Deep)
+are not exposed — we have one scored pipeline and one reflection step.
+
+Status: scoring + `/promote-explain` + dry-run sweep shipped. Promote step
+and REM reflection are follow-ups. Full task spec:
+[`agents/tasks/009_dreaming_sweep.md`](../agents/tasks/009_dreaming_sweep.md).
+
+## Scoring
+
+Every candidate memory is scored on six weighted signals summing to 1.0.
+Thresholds gate promotion — a memory must clear **all three** gates to
+promote.
+
+| Signal              | Weight | Source                                                |
+|---------------------|--------|-------------------------------------------------------|
+| frequency           | 0.24   | `recall_stats.recall_count`, log-saturated            |
+| relevance           | 0.30   | `recall_stats.sum_relevance / recall_count`           |
+| query_diversity     | 0.15   | distinct query hashes (cap 20)                        |
+| recency             | 0.15   | `exp(-age_days / 14)`                                 |
+| consolidation       | 0.10   | distinct UTC days recalled (cap 30)                   |
+| conceptual_richness | 0.06   | metadata tag count + scope depth                      |
+
+Gate thresholds (env-tunable):
+
+| Env var                         | Default |
+|---------------------------------|---------|
+| `MG_DREAM_MIN_SCORE`            | `0.35`  |
+| `MG_DREAM_MIN_RECALL_COUNT`     | `2`     |
+| `MG_DREAM_MIN_UNIQUE_QUERIES`   | `2`     |
+
+The recall-side inputs (`sum_relevance`, `query_hashes`, `recall_days`) are
+populated automatically on every `/recall` hit. No extra wiring needed.
+
+## Explaining a promotion decision
+
+Ask the governor directly:
+
+```bash
+curl -s -X POST http://127.0.0.1:54323/promote-explain \
+  -H "Content-Type: application/json" \
+  -d '{"memory_id":"<id>","user_id":"sam"}' | jq
+```
+
+Or use the CLI:
+
+```bash
+scripts/sacred-brain-explain <memory_id> --user-id sam
+scripts/sacred-brain-explain <memory_id> --json
+```
+
+Sample pretty output:
+
+```
+memory_id: mem-abc
+text:      always use docker compose plugin syntax
+
+score:     0.612   threshold: 0.350
+passed:    ✓
+
+signal                    raw    weighted
+------------------------------------------
+frequency               0.778       0.187
+relevance               0.820       0.246
+query_diversity         0.600       0.090
+recency                 0.867       0.130
+consolidation           0.429       0.043
+conceptual_richness     0.333       0.020
+
+inputs:
+  recall_count:     8
+  distinct_queries: 3
+  distinct_days:    3
+  avg_relevance:    0.820
+  age_days:         2.0
+  tag_count:        2
+  scope_depth:      1
+```
+
+## Dry-run sweep
+
+Score every memory for a user and print a pass/fail table. Writes nothing.
+
+```bash
+PYTHONPATH=/opt/sacred-brain python scripts/dream_sweep.py \
+  --user-id sam --limit 200
+```
+
+Flags:
+
+- `--json` — emit JSON instead of the table
+- `--min-score`, `--min-recall-count`, `--min-unique-queries` — override gates
+- `--limit` — max memories to fetch (default 500)
+
+## Dream output path resolution
+
+When the reflection (REM) step lands, it will write a narrative entry per
+sweep. The output target is resolved in this order:
+
+1. `DREAMS_OUTPUT_PATH` env var
+2. Per-package default (downstream packages pass this in code)
+3. Sacred-brain default: `/opt/sacred-brain/var/dreams/`
+
+Behavior by target shape:
+
+- **Path ends in `.md`** → single-file mode. Overwrite the file each run.
+  This is the right default for workspace-style installs (one DREAMS.md per
+  git repo, committable).
+- **Path is a directory** → dated rotation. Writes `YYYY-MM-DD.md` into the
+  directory and updates a `latest.md` symlink.
+
+**Mental model: a workspace = its own git repo.** Sacred-brain is a
+service, not a workspace, so its dreams go to `var/`. Any repo that wants
+dreams about itself sets `DREAMS_OUTPUT_PATH` to its own root and gets a
+versionable single file.
+
+## Relation to `/consolidate`
+
+The existing hourly `/consolidate` timer (rule-based keyword bucketing) is
+untouched. The Dreaming sweep is additive: a nightly scored layer that
+eventually subsumes it. Both can run in parallel indefinitely; we'll fold
+the hourly path in once scoring is proven on real data.
+
+## References
+
+- Task spec: [`agents/tasks/009_dreaming_sweep.md`](../agents/tasks/009_dreaming_sweep.md)
+- OpenClaw's source: `/opt/openclaw/docs/concepts/dreaming.md`
+- Code: `memory_governor/mem_policy.py` (`score_candidate`, `build_candidate_stats`),
+  `memory_governor/dream.py` (sweep core + path helpers),
+  `memory_governor/store.py` (`recall_stats` aggregates)

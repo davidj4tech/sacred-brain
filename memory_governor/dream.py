@@ -8,8 +8,10 @@ its inputs.
 
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Iterable
 
 from memory_governor.mem_policy import build_candidate_stats, score_candidate
@@ -63,6 +65,61 @@ def score_memories(
 
     scored.sort(key=lambda s: s.result.score, reverse=True)
     return scored
+
+
+SACRED_BRAIN_DREAMS_DEFAULT = Path("/opt/sacred-brain/var/dreams")
+
+
+def resolve_dreams_output_path(package_default: str | os.PathLike | None = None) -> Path:
+    """Resolve where DREAMS.md / dated dream files should be written.
+
+    Resolution order (first hit wins):
+      1. `DREAMS_OUTPUT_PATH` env var
+      2. `package_default` arg (downstream packages set this — e.g., a
+         workspace-scoped install points it at `$WORKSPACE/DREAMS.md`)
+      3. sacred-brain default: `/opt/sacred-brain/var/dreams`
+    """
+    env = os.environ.get("DREAMS_OUTPUT_PATH")
+    if env:
+        return Path(env).expanduser()
+    if package_default:
+        return Path(package_default).expanduser()
+    return SACRED_BRAIN_DREAMS_DEFAULT
+
+
+def dreams_target_for_today(
+    base: Path, today: str | None = None
+) -> tuple[Path, Path | None]:
+    """Given a resolved base path, return (file_to_write, latest_symlink or None).
+
+    - If `base` looks like a file (`.md` suffix), return `(base, None)` —
+      single-file mode (overwrite daily). Used by workspace-style installs
+      that want one living `DREAMS.md` at the repo root.
+    - Otherwise treat `base` as a directory: return
+      `(base/YYYY-MM-DD.md, base/latest.md)` — dated rotation.
+    """
+    if base.suffix == ".md":
+        return base, None
+    day = today or time.strftime("%Y-%m-%d", time.gmtime())
+    return base / f"{day}.md", base / "latest.md"
+
+
+def write_dream_entry(base: Path, content: str, today: str | None = None) -> Path:
+    """Write `content` to today's dream target. Returns the actual path written.
+
+    In dated-rotation mode, also updates a `latest.md` symlink next to the
+    file. The symlink update is atomic (write-tmp then rename).
+    """
+    target, symlink = dreams_target_for_today(base, today)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content, encoding="utf-8")
+    if symlink:
+        tmp = symlink.with_name(symlink.name + ".tmp")
+        if tmp.exists() or tmp.is_symlink():
+            tmp.unlink()
+        tmp.symlink_to(target.name)
+        tmp.replace(symlink)
+    return target
 
 
 def format_score_table(scored: list[ScoredMemory], text_width: int = 60) -> str:

@@ -14,6 +14,7 @@ sources (maubot/n8n/CLI) -> /observe|/remember -> memory-governor
 - `POST /remember` — explicit durable write (canonicalizes text).
 - `POST /recall` — query Hippocampus with filters; returns curated results with provenance.
 - `POST /consolidate` — summarize working memory into episodic/semantic/procedural and write high-salience items.
+- `POST /promote-explain` — Dreaming: explain the scoring breakdown for a memory id. Read-only. See [DREAMING.md](DREAMING.md).
 - `GET /health`
 
 ### Example payloads

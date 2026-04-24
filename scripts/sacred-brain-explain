@@ -1,0 +1,107 @@
+#!/usr/bin/env python3
+"""Explain why a memory would or would not promote under Dreaming scoring.
+
+Thin CLI wrapper around POST /promote-explain.
+
+Usage:
+    sacred-brain-explain <memory_id> [--user-id sam]
+    sacred-brain-explain <memory_id> --json
+
+Env:
+    GOVERNOR_URL       default http://127.0.0.1:54323
+    GOVERNOR_API_KEY   optional bearer token
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+
+
+def _pretty(body: dict) -> str:
+    result = body["result"]
+    stats = body["stats"]
+    signals = result["signals"]
+    weighted = result["weighted"]
+
+    lines = []
+    lines.append(f"memory_id: {body['memory_id']}")
+    text = (body.get("text") or "").replace("\n", " ").strip()
+    if len(text) > 100:
+        text = text[:99] + "…"
+    lines.append(f"text:      {text}")
+    lines.append("")
+    lines.append(f"score:     {result['score']:.3f}   threshold: {result['threshold']:.3f}")
+    lines.append(f"passed:    {'✓' if result['passed'] else '✗'}")
+    lines.append("")
+    lines.append(f"{'signal':<22}{'raw':>8}{'weighted':>12}")
+    lines.append("-" * 42)
+    for name in (
+        "frequency",
+        "relevance",
+        "query_diversity",
+        "recency",
+        "consolidation",
+        "conceptual_richness",
+    ):
+        lines.append(f"{name:<22}{signals[name]:>8.3f}{weighted[name]:>12.3f}")
+    lines.append("")
+    lines.append("inputs:")
+    lines.append(f"  recall_count:     {stats['recall_count']}")
+    lines.append(f"  distinct_queries: {stats['distinct_queries']}")
+    lines.append(f"  distinct_days:    {stats['distinct_days']}")
+    lines.append(f"  avg_relevance:    {stats['avg_relevance']:.3f}")
+    lines.append(f"  age_days:         {stats['age_days']:.1f}")
+    lines.append(f"  tag_count:        {stats['tag_count']}")
+    lines.append(f"  scope_depth:      {stats['scope_depth']}")
+    if result["reasons"]:
+        lines.append("")
+        lines.append("would not promote because:")
+        for r in result["reasons"]:
+            lines.append(f"  - {r}")
+    return "\n".join(lines) + "\n"
+
+
+def main() -> int:
+    p = argparse.ArgumentParser(description="Explain memory promotion scoring")
+    p.add_argument("memory_id")
+    p.add_argument("--user-id", default=os.environ.get("GOVERNOR_USER_ID", "sam"))
+    p.add_argument("--json", action="store_true", help="Emit raw JSON")
+    p.add_argument("--url", default=os.environ.get("GOVERNOR_URL", "http://127.0.0.1:54323"))
+    args = p.parse_args()
+
+    payload = json.dumps({"memory_id": args.memory_id, "user_id": args.user_id}).encode()
+    req = urllib.request.Request(
+        f"{args.url.rstrip('/')}/promote-explain",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    if key := os.environ.get("GOVERNOR_API_KEY"):
+        req.add_header("X-API-Key", key)
+        req.add_header("Authorization", f"Bearer {key}")
+
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            body = json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        msg = e.read().decode(errors="replace")
+        print(f"HTTP {e.code}: {msg}", file=sys.stderr)
+        return 1
+    except urllib.error.URLError as e:
+        print(f"Connection failed: {e.reason}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps(body, indent=2))
+    else:
+        print(_pretty(body), end="")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
