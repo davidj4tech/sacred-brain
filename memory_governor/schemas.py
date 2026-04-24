@@ -145,3 +145,17 @@ class ScoreThresholds(BaseModel):
     min_score: float = 0.35
     min_recall_count: int = 2
     min_unique_queries: int = 2
+
+
+class PromoteExplainRequest(BaseModel):
+    memory_id: str
+    user_id: str
+    thresholds: ScoreThresholds | None = None
+
+
+class PromoteExplainResponse(BaseModel):
+    memory_id: str
+    text: str
+    stats: CandidateStats
+    result: ScoreResult
+    metadata: dict[str, Any] = Field(default_factory=dict)

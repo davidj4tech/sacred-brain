@@ -11,7 +11,15 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from memory_governor.clients import HippocampusClient
 from memory_governor.config import GovernorConfig, load_config
-from memory_governor.mem_policy import canonicalize_memory, classify_observation, consolidate_events, default_tier_for_event, extract_tier_and_text
+from memory_governor.mem_policy import (
+    build_candidate_stats,
+    canonicalize_memory,
+    classify_observation,
+    consolidate_events,
+    default_tier_for_event,
+    extract_tier_and_text,
+    score_candidate,
+)
 from memory_governor.scopes import matches_filter, scope_path as _scope_path
 from memory_governor.schemas import (
     ConsolidateRequest,
@@ -20,6 +28,8 @@ from memory_governor.schemas import (
     ObserveResponse,
     OutcomeRequest,
     OutcomeResponse,
+    PromoteExplainRequest,
+    PromoteExplainResponse,
     RecallRequest,
     RecallResponse,
     RememberRequest,
@@ -482,6 +492,33 @@ async def recall_stats_protected(since_days: int | None = None) -> dict[str, Any
     since_ts = int(time.time() - days * 86400)
     ids = runtime.store.recently_recalled_ids(since_ts)
     return {"since_days": days, "since_ts": since_ts, "memory_ids": ids}
+
+
+@app.post("/promote-explain", response_model=PromoteExplainResponse)
+async def promote_explain(payload: PromoteExplainRequest) -> PromoteExplainResponse:
+    """Explain why a memory would or would not promote under current scoring.
+
+    Reads live state from Hippocampus + recall_stats and runs score_candidate.
+    Read-only — does not mutate anything.
+    """
+    from fastapi import HTTPException
+
+    mem = await runtime.hippo.get_memory(payload.user_id, payload.memory_id)
+    if not mem:
+        raise HTTPException(status_code=404, detail=f"memory_id {payload.memory_id} not found")
+
+    row = runtime.store.get_recall_stats(payload.memory_id)
+    stats = build_candidate_stats(row, mem)
+    result = score_candidate(stats, payload.thresholds)
+
+    meta = mem.get("metadata") or {}
+    return PromoteExplainResponse(
+        memory_id=payload.memory_id,
+        text=mem.get("text") or mem.get("memory") or "",
+        stats=stats,
+        result=result,
+        metadata=meta,
+    )
 
 
 @app.post("/consolidate", response_model=ConsolidateResponse)

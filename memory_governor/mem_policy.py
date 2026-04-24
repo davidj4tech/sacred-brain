@@ -216,6 +216,53 @@ def _linear_saturate(value: float, saturation: int) -> float:
     return min(1.0, value / saturation)
 
 
+def build_candidate_stats(
+    recall_stats_row: dict | None,
+    memory: dict | None,
+    now_ts: float | None = None,
+) -> CandidateStats:
+    """Adapter: combine recall_stats row with a Hippocampus memory dict.
+
+    Pure function — callers pass in the data. `recall_stats_row` is the dict
+    returned by WorkingStore.get_recall_stats(). `memory` is a Hippocampus
+    memory dict (id, text, metadata). Either may be None.
+    """
+    import time as _time
+
+    row = recall_stats_row or {}
+    mem = memory or {}
+    meta = mem.get("metadata") or {}
+
+    ts = meta.get("timestamp") or meta.get("ts") or meta.get("created_at")
+    now = now_ts if now_ts is not None else _time.time()
+    age_days = max(0.0, (float(now) - float(ts)) / 86400.0) if ts else 0.0
+
+    tags = meta.get("tags") or meta.get("keywords") or []
+    tag_count = len(tags) if isinstance(tags, list) else 0
+
+    scope_depth = 1
+    scope = meta.get("scope")
+    if isinstance(scope, dict):
+        cur = scope
+        while isinstance(cur, dict) and cur.get("parent"):
+            scope_depth += 1
+            cur = cur.get("parent")
+    else:
+        sp = meta.get("scope_path")
+        if isinstance(sp, str) and sp:
+            scope_depth = max(1, sp.count("/") + 1)
+
+    return CandidateStats(
+        recall_count=int(row.get("recall_count") or 0),
+        avg_relevance=float(row.get("avg_relevance") or 0.0),
+        distinct_queries=int(row.get("distinct_queries") or 0),
+        distinct_days=int(row.get("distinct_days") or 0),
+        age_days=age_days,
+        tag_count=tag_count,
+        scope_depth=scope_depth,
+    )
+
+
 def score_candidate(
     stats: CandidateStats,
     thresholds: ScoreThresholds | None = None,
