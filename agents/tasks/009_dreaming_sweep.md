@@ -105,8 +105,8 @@ Retain existing `memory-governor-consolidate.timer` (hourly, rule-based) for now
 5. Add `scripts/sacred-brain-explain` CLI (mirrors existing script style).
 6. Write `scripts/dream_sweep.py`. Keep it composable — each step a callable, main is `orchestrate(steps=[...])`.
 7. Add dreams output path resolver in `config.py`: `resolve_dreams_output_path() -> Path`.
-8. Add Haiku-backed reflection writer. Use `anthropic` SDK with prompt caching on system + rubric blocks. Model id `claude-haiku-4-5-20251001`.
-9. Add systemd unit + timer in `ops/systemd/`. Install via existing install docs path.
+8. Add Haiku-backed reflection writer. **Implemented in `memory_governor/rem.py`** using the existing LiteLLM gateway (httpx), same pattern as the reranker — no new SDK dependency. Prompt caching is applied via `cache_control: {type: ephemeral}` on the system prompt and rubric blocks (LiteLLM passes these through to Anthropic for Claude models). Per-night data block is uncached. Model id `claude-haiku-4-5-20251001`. Exposed via `dream_sweep.py --reflect`.
+9. Add systemd unit + timer in `ops/systemd/`. **Shipped:** `sacred-brain-dream.service` (oneshot; runs `dream_sweep.py --apply --reflect` for each user in `MG_DREAM_USERS`, default `sam`; reads `/etc/sacred-brain/memory-governor.env`) and `sacred-brain-dream.timer` (OnCalendar `*-*-* 03:00:00`, `Persistent=true`, 5-minute randomized delay).
 10. Update `docs/MEMORY_GOVERNOR.md` with the new env vars, endpoint, CLI, and sweep description. Add a short `docs/DREAMING.md` covering the output path resolution rules and the per-package default override.
 11. Tests:
     - `tests/test_score_candidate.py` — signal math, threshold gating, reason strings.

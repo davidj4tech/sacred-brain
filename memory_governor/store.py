@@ -250,6 +250,26 @@ class WorkingStore:
             "distinct_days": len(days),
         }
 
+    def top_recalled(self, limit: int = 20) -> list[dict[str, Any]]:
+        """Return top-N memories by recall_count, most-recalled first.
+
+        Used by REM reflection to build the "most-activated" slice. Each row
+        has memory_id, recall_count, last_recalled_at.
+        """
+        if limit <= 0:
+            return []
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT memory_id, recall_count, last_recalled_at "
+                "FROM recall_stats ORDER BY recall_count DESC, last_recalled_at DESC "
+                "LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [
+            {"memory_id": r[0], "recall_count": r[1], "last_recalled_at": r[2]}
+            for r in rows
+        ]
+
     def get_recall_counts(self, memory_ids: list[str]) -> dict[str, int]:
         """Batch lookup for ranking. Returns {memory_id: recall_count} for known ids only."""
         if not memory_ids:

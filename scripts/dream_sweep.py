@@ -23,7 +23,15 @@ from memory_governor.config import load_config
 from memory_governor.dream import (
     format_score_table,
     record_passing_promotions,
+    resolve_dreams_output_path,
     score_memories,
+    write_dream_entry,
+)
+from memory_governor.rem import (
+    build_rem_messages,
+    call_haiku_reflection,
+    format_dream_entry,
+    gather_rem_inputs,
 )
 from memory_governor.schemas import ScoreThresholds
 from memory_governor.store import WorkingStore
@@ -58,6 +66,27 @@ async def _run(args: argparse.Namespace) -> int:
         recorded = record_passing_promotions(scored, store.record_dream_promotion)
         print(f"Recorded {recorded} dream_promotions row(s).", file=sys.stderr)
 
+    if args.reflect:
+        inputs = gather_rem_inputs(store, cfg.stream_log_path, since_hours=24, top_k=20)
+        if inputs.is_empty:
+            print("REM: no inputs (empty stream + no promotions + no recalls); skipping.",
+                  file=sys.stderr)
+        else:
+            messages = build_rem_messages(inputs)
+            try:
+                reflection = call_haiku_reflection(
+                    messages,
+                    litellm_base_url=cfg.litellm_base_url,
+                    litellm_api_key=cfg.litellm_api_key,
+                )
+            except Exception as exc:
+                print(f"REM: reflection call failed: {exc}", file=sys.stderr)
+                return 2
+            entry = format_dream_entry(reflection, inputs)
+            base = resolve_dreams_output_path()
+            written = write_dream_entry(base, entry)
+            print(f"REM: wrote {written}", file=sys.stderr)
+
     if args.json:
         payload = [
             {
@@ -84,6 +113,8 @@ def main() -> int:
     p.add_argument("--user-id", required=True, help="Hippocampus user_id to sweep")
     p.add_argument("--apply", action="store_true",
                    help="Write dream_promotions rows for passing memories (default: dry-run)")
+    p.add_argument("--reflect", action="store_true",
+                   help="Run REM reflection (Haiku) and write a dream entry")
     p.add_argument("--limit", type=int, default=500,
                    help="Max memories to fetch from Hippocampus (default 500)")
     p.add_argument("--json", action="store_true", help="Emit JSON instead of table")

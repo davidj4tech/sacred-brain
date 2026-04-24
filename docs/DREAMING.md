@@ -9,8 +9,9 @@ substrate: Hippocampus + SQLite rather than markdown files, explicit scopes,
 systemd timers instead of a single cron. Phase names (Light / REM / Deep)
 are not exposed — we have one scored pipeline and one reflection step.
 
-Status: scoring + `/promote-explain` + dry-run sweep shipped. Promote step
-and REM reflection are follow-ups. Full task spec:
+Status: scoring + `/promote-explain` + sweep + promote (governor ledger) +
+REM reflection shipped. Systemd timer wiring is the remaining step. Full
+task spec:
 [`agents/tasks/009_dreaming_sweep.md`](../agents/tasks/009_dreaming_sweep.md).
 
 ## Scoring
@@ -97,6 +98,11 @@ Flags:
 
 - `--apply` — actually persist `dream_promotions` rows for memories that
   pass the gates (default is dry-run)
+- `--reflect` — after scoring (and `--apply`, if set), run the REM
+  reflection step: Haiku summarises the last 24h of stream events,
+  today's promotions, and the top-recalled memories, and writes a
+  narrative entry via `write_dream_entry`. Read-only on the memory
+  store. Silently skips when there is nothing to reflect on.
 - `--json` — emit JSON instead of the table
 - `--min-score`, `--min-recall-count`, `--min-unique-queries` — override gates
 - `--limit` — max memories to fetch (default 500)
@@ -136,10 +142,27 @@ separate lookup.
 | `MG_DREAM_BOOST_WINDOW_DAYS` | `7`     | How long a promotion boosts recall  |
 | `DREAMS_OUTPUT_PATH`         | —       | Override for `DREAMS.md` path       |
 
+## REM reflection
+
+The reflection step (`--reflect`) is a single read-only call to
+`claude-haiku-4-5-20251001` via LiteLLM. Inputs:
+
+1. Last 24h of `stream_log` JSONL records (path in
+   `cfg.stream_log_path` — `var/memory-governor/stream.log`).
+2. Every memory promoted in the last 24h (`dream_promotions` rows with
+   `last_dreamed_at >= cutoff`).
+3. Top-20 memories by `recall_stats.recall_count` across all time.
+
+The system prompt and rubric carry `cache_control: {type: ephemeral}` so
+repeated nights hit Anthropic's prompt cache; the per-night data block
+does not. Output is 2-4 paragraphs of plain prose, prefixed with YAML
+frontmatter (`date`, `promoted_count`, `reflection_model`,
+`input_event_count`) and written via `write_dream_entry` to the path
+resolved below. REM never mutates the memory store.
+
 ## Dream output path resolution
 
-When the reflection (REM) step lands, it will write a narrative entry per
-sweep. The output target is resolved in this order:
+REM writes its narrative entry per sweep to a target resolved as:
 
 1. `DREAMS_OUTPUT_PATH` env var
 2. Per-package default (downstream packages pass this in code)
@@ -171,4 +194,9 @@ the hourly path in once scoring is proven on real data.
 - OpenClaw's source: `/opt/openclaw/docs/concepts/dreaming.md`
 - Code: `memory_governor/mem_policy.py` (`score_candidate`, `build_candidate_stats`),
   `memory_governor/dream.py` (sweep core + path helpers),
-  `memory_governor/store.py` (`recall_stats` aggregates)
+  `memory_governor/rem.py` (REM reflection: gather / build / call / format),
+  `memory_governor/store.py` (`recall_stats` aggregates, `dream_promotions`,
+  `top_recalled`)
+- Systemd: `ops/systemd/sacred-brain-dream.{service,timer}`
+  (OnCalendar `03:00`, runs `dream_sweep.py --apply --reflect` per user
+  listed in `MG_DREAM_USERS`, default `sam`)

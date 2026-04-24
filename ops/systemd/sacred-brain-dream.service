@@ -1,0 +1,31 @@
+[Unit]
+Description=Sacred Brain nightly dreaming sweep (score + promote + REM reflection)
+After=memory-governor.service hippocampus.service
+Requires=memory-governor.service
+
+[Service]
+Type=oneshot
+User=sacred
+Group=sacred
+EnvironmentFile=/etc/sacred-brain/memory-governor.env
+WorkingDirectory=/opt/sacred-brain
+Environment=PYTHONPATH=/opt/sacred-brain
+ExecStart=/bin/bash -lc '\
+  USERS="${MG_DREAM_USERS:-sam}"; \
+  IFS="," read -ra ITEMS <<< "$USERS"; \
+  for u in "${ITEMS[@]}"; do \
+    [ -z "$u" ] && continue; \
+    /opt/sacred-brain/.venv/bin/python /opt/sacred-brain/scripts/dream_sweep.py \
+      --user-id "$u" --apply --reflect || true; \
+  done'
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ReadWritePaths=/opt/sacred-brain/var
+
+[Install]
+WantedBy=multi-user.target
