@@ -51,3 +51,6 @@ Project-scoped memory in `.claude/` is welcome. The Governor bridge (see `docs/C
 
 ### OpenCode
 Reads this file directly. The Governor bridge (see `docs/OPENCODE_BRIDGE.md`) writes recalled memories into `.agents/CONTEXT_MEMORY.md` via either a native pre-session hook or the `opencode-with-governor` launcher wrapper.
+
+### Pi (pi-coding-agent)
+Pi exposes a typed extension API instead of a shell-hook config slot, so the bridge ships as a TypeScript extension at `~/.pi/agent/extensions/sacred-brain-bridge.ts` (sourced from `extensions/pi-bridge.ts` in this repo). It subscribes to `session_start`/`before_agent_start`/`session_before_compact`/`session_shutdown` and (a) pulls recalled memory into `.agents/CONTEXT_MEMORY.md` *and* directly into the system prompt, (b) POSTs the to-be-summarised tail to `/observe` with source `pi:precompact` (capped at 0.35 salience), and (c) drains `~/.cache/sacred-brain/pi-pending-outcome.jsonl` on session shutdown. See `docs/PI_BRIDGE.md`.

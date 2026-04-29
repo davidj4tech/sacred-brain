@@ -86,6 +86,7 @@ LOW_SALIENCE_SOURCES: dict[str, float] = {
     "claude-code:precompact": 0.35,
     "opencode:precompact": 0.35,
     "codex:precompact": 0.35,
+    "pi:precompact": 0.35,
 }
 
 

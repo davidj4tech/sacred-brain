@@ -45,6 +45,18 @@ def test_classify_codex_precompact_source_capped() -> None:
     assert salience <= 0.35
 
 
+def test_classify_pi_precompact_source_capped() -> None:
+    text = " ".join(["please remember always prefer"] * 100)
+    req = ObserveRequest(
+        source="pi:precompact",
+        user_id="sam",
+        text=text,
+        scope=Scope(kind="user", id="sam"),
+    )
+    salience, _ = classify_observation(req)
+    assert salience <= 0.35
+
+
 def test_classify_regular_source_not_capped() -> None:
     # Same text from a normal source should not be capped
     text = " ".join(["please remember always prefer"] * 100)
