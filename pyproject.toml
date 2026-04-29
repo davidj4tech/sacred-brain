@@ -17,7 +17,11 @@ dependencies = [
   "mem0ai>=1.0.1",
   "agno>=2.3.0",
   "mcp>=1.27.0",
+  "kerykeion>=4.11",
 ]
+
+[tool.setuptools]
+packages = ["memory_governor"]
 
 [project.optional-dependencies]
 dev = [

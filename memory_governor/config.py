@@ -59,6 +59,7 @@ class GovernorConfig:
     dream_protect_days: int = 14
     dream_boost_weight: float = 0.05
     dream_boost_window_days: int = 7
+    oracle_enabled: bool = True
     state_dir: Path = field(
         default_factory=lambda: Path(
             os.environ.get(
@@ -105,6 +106,7 @@ def load_config() -> GovernorConfig:
         dream_protect_days=int(os.environ.get("MG_DREAM_PROTECT_DAYS", "14")),
         dream_boost_weight=float(os.environ.get("MG_DREAM_BOOST_WEIGHT", "0.05")),
         dream_boost_window_days=int(os.environ.get("MG_DREAM_BOOST_WINDOW_DAYS", "7")),
+        oracle_enabled=_as_bool(os.environ.get("MG_ORACLE_ENABLED"), True),
     )
 
     cfg.state_dir.mkdir(parents=True, exist_ok=True)

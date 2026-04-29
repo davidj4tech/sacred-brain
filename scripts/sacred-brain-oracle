@@ -1,0 +1,182 @@
+#!/usr/bin/env python3
+"""Manage natal-chart details for the Dreaming oracle layer.
+
+Subcommands:
+    show <user_id>          Show stored natal data (or "(none)").
+    set  <user_id> ...      Save natal data (uses flags below).
+    rm   <user_id>          Delete stored natal data.
+    preview <user_id>       Print the oracle snapshot that would be folded
+                            into tonight's REM reflection.
+
+`set` flags:
+    --name NAME             Display name (default: user_id).
+    --date YYYY-MM-DD       Birth date (required).
+    --time HH:MM            Birth time, 24h local. Default 12:00 (noon).
+                            Without a real time the Ascendant + houses are
+                            unreliable; transits to Sun/Moon/planets remain
+                            usable.
+    --city CITY             Birth city (default: Greenwich).
+    --nation CC             ISO-3166-1 alpha-2 country code (default: GB).
+    --lat LAT               Latitude in decimal degrees.
+    --lng LNG               Longitude in decimal degrees.
+    --tz TZ                 IANA tz name (e.g. America/Los_Angeles).
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+# allow running directly from scripts/
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import asyncio
+
+from memory_governor.clients import HippocampusClient
+from memory_governor.config import load_config
+from memory_governor.oracle import (
+    build_oracle_snapshot,
+    discover_natal_from_memory,
+    format_oracle_block,
+    load_natal,
+    natal_is_complete,
+    natal_path,
+    save_natal,
+)
+
+
+def _cmd_show(args, state_dir: Path) -> int:
+    data = load_natal(state_dir, args.user_id)
+    if data is None:
+        print(f"(none) — would be at {natal_path(state_dir, args.user_id)}")
+        return 1
+    print(json.dumps(data, indent=2, sort_keys=True))
+    return 0
+
+
+def _cmd_set(args, state_dir: Path) -> int:
+    try:
+        year, month, day = (int(x) for x in args.date.split("-"))
+    except ValueError:
+        print("--date must be YYYY-MM-DD", file=sys.stderr)
+        return 2
+    hour, minute = 12, 0
+    if args.time:
+        try:
+            hour, minute = (int(x) for x in args.time.split(":"))
+        except ValueError:
+            print("--time must be HH:MM", file=sys.stderr)
+            return 2
+
+    data = {
+        "name": args.name or args.user_id,
+        "year": year, "month": month, "day": day,
+        "hour": hour, "minute": minute,
+        "city": args.city, "nation": args.nation,
+        "lat": args.lat, "lng": args.lng,
+        "tz_str": args.tz,
+    }
+    p = save_natal(state_dir, args.user_id, data)
+    print(f"wrote {p}")
+    return 0
+
+
+def _cmd_rm(args, state_dir: Path) -> int:
+    p = natal_path(state_dir, args.user_id)
+    if not p.exists():
+        print(f"(no file at {p})")
+        return 1
+    p.unlink()
+    print(f"removed {p}")
+    return 0
+
+
+def _cmd_preview(args, state_dir: Path) -> int:
+    cfg = load_config()
+    oracle = build_oracle_snapshot(args.user_id, state_dir, enabled=cfg.oracle_enabled)
+    if oracle is None:
+        print("(oracle disabled — set MG_ORACLE_ENABLED=1)")
+        return 1
+    print(format_oracle_block(oracle))
+    print()
+    print("frontmatter would include:")
+    print(json.dumps({
+        "natal_used": oracle.get("natal_used"),
+        "astro": oracle.get("astro"),
+        "tarot": oracle.get("tarot"),
+    }, indent=2))
+    return 0
+
+
+def _cmd_discover(args, state_dir: Path) -> int:
+    cfg = load_config()
+    hippo = HippocampusClient(
+        hippocampus_url=cfg.hippocampus_url,
+        hippocampus_api_key=cfg.hippocampus_api_key,
+    )
+    found, sources = asyncio.run(discover_natal_from_memory(args.user_id, hippo))
+    print("found fields:")
+    print(json.dumps(found, indent=2, sort_keys=True))
+    print(f"sources: {sources}")
+    if args.save and natal_is_complete(found):
+        existing = load_natal(state_dir, args.user_id) or {}
+        merged = {**existing, **found}
+        merged.setdefault("name", args.user_id)
+        p = save_natal(state_dir, args.user_id, merged)
+        print(f"saved → {p}")
+    elif args.save:
+        print("not saved: discovery did not yield complete date (year/month/day)")
+        return 1
+    return 0
+
+
+def main() -> int:
+    p = argparse.ArgumentParser(description="Sacred Brain oracle / natal-chart manager")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    sp = sub.add_parser("show")
+    sp.add_argument("user_id")
+
+    sp = sub.add_parser("set")
+    sp.add_argument("user_id")
+    sp.add_argument("--name")
+    sp.add_argument("--date", required=True, help="YYYY-MM-DD")
+    sp.add_argument("--time", help="HH:MM (24h, local). Default 12:00.")
+    sp.add_argument("--city", default="Greenwich")
+    sp.add_argument("--nation", default="GB")
+    sp.add_argument("--lat", type=float, default=51.4769)
+    sp.add_argument("--lng", type=float, default=0.0)
+    sp.add_argument("--tz", default="UTC", help="IANA tz, e.g. America/Los_Angeles")
+
+    sp = sub.add_parser("rm")
+    sp.add_argument("user_id")
+
+    sp = sub.add_parser("preview")
+    sp.add_argument("user_id")
+
+    sp = sub.add_parser("discover", help="Probe long-term memory for natal facts")
+    sp.add_argument("user_id")
+    sp.add_argument("--save", action="store_true",
+                    help="Persist found fields if a complete date is recovered")
+
+    args = p.parse_args()
+    cfg = load_config()
+    state_dir = cfg.state_dir
+
+    if args.cmd == "show":
+        return _cmd_show(args, state_dir)
+    if args.cmd == "set":
+        return _cmd_set(args, state_dir)
+    if args.cmd == "rm":
+        return _cmd_rm(args, state_dir)
+    if args.cmd == "preview":
+        return _cmd_preview(args, state_dir)
+    if args.cmd == "discover":
+        return _cmd_discover(args, state_dir)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

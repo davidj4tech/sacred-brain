@@ -44,6 +44,10 @@ REM_RUBRIC = (
     "     those look sensible (or not) given the recent activity.\n"
     "  3. Tension / gaps — memories that keep getting recalled but never\n"
     "     promoted, or promoted memories that look stale. Optional.\n"
+    "If an Oracle block is provided (sky + tarot), let it color the *tone* of\n"
+    "the reflection only — it is flavor, not fact. Never invent memory content\n"
+    "or events to match the omen; do not state the card or planetary positions\n"
+    "as if they caused anything.\n"
     "Write in plain prose. No headings, no bullet lists, no code fences."
 )
 
@@ -150,15 +154,24 @@ def _summarise_top_recalled(rows: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def build_rem_messages(inputs: RemInputs) -> list[dict[str, Any]]:
+def build_rem_messages(
+    inputs: RemInputs,
+    oracle: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     """Build Anthropic-style messages with cache_control on system + rubric.
 
     LiteLLM passes `cache_control` through to Anthropic for Claude models.
     System prompt + rubric are stable across nights (cache-friendly);
     the data block is per-night (no cache marker).
     """
+    oracle_section = ""
+    if oracle:
+        from memory_governor.oracle import format_oracle_block
+        oracle_section = "# Oracle (tonight's influences)\n" + format_oracle_block(oracle) + "\n\n"
+
     data_block = (
-        "# Stream events (last 24h)\n"
+        oracle_section
+        + "# Stream events (last 24h)\n"
         f"{_summarise_events(inputs.stream_events)}\n\n"
         "# Promotions today\n"
         f"{_summarise_promotions(inputs.promoted_today)}\n\n"
@@ -207,15 +220,37 @@ def call_haiku_reflection(
     return data["choices"][0]["message"]["content"]
 
 
-def format_dream_entry(reflection_text: str, inputs: RemInputs, *, model: str = REM_MODEL) -> str:
+def format_dream_entry(
+    reflection_text: str,
+    inputs: RemInputs,
+    *,
+    model: str = REM_MODEL,
+    oracle: dict[str, Any] | None = None,
+) -> str:
     """Wrap the model reply with YAML frontmatter."""
     date = time.strftime("%Y-%m-%d", time.gmtime(inputs.now_ts or time.time()))
-    front = (
-        "---\n"
-        f"date: {date}\n"
-        f"promoted_count: {len(inputs.promoted_today)}\n"
-        f"reflection_model: {model}\n"
-        f"input_event_count: {inputs.event_count}\n"
-        "---\n\n"
-    )
+    lines = [
+        "---",
+        f"date: {date}",
+        f"promoted_count: {len(inputs.promoted_today)}",
+        f"reflection_model: {model}",
+        f"input_event_count: {inputs.event_count}",
+    ]
+    if oracle:
+        astro = oracle.get("astro") or {}
+        tarot = oracle.get("tarot") or {}
+        lines.append(f"astro_mode: {astro.get('mode', 'unavailable')}")
+        if astro.get("precision"):
+            lines.append(f"astro_precision: {astro['precision']}")
+        if astro.get("sun_sign"):
+            lines.append(f"sun_sign: {astro['sun_sign']}")
+        if astro.get("moon_sign"):
+            lines.append(f"moon_sign: {astro['moon_sign']}")
+        if astro.get("moon_phase"):
+            lines.append(f"moon_phase: {astro['moon_phase']}")
+        if tarot.get("card"):
+            orient = "reversed" if tarot.get("reversed") else "upright"
+            lines.append(f"tarot_card: {tarot['card']} ({orient})")
+    lines.append("---\n")
+    front = "\n".join(lines) + "\n"
     return front + reflection_text.strip() + "\n"

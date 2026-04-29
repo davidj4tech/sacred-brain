@@ -141,6 +141,7 @@ separate lookup.
 | `MG_DREAM_BOOST_WEIGHT`      | `0.05`  | Weight of dream_boost in `/recall`  |
 | `MG_DREAM_BOOST_WINDOW_DAYS` | `7`     | How long a promotion boosts recall  |
 | `DREAMS_OUTPUT_PATH`         | —       | Override for `DREAMS.md` path       |
+| `MG_ORACLE_ENABLED`          | `1`     | Fold astrology + tarot into REM     |
 
 ## REM reflection
 
@@ -180,6 +181,71 @@ Behavior by target shape:
 service, not a workspace, so its dreams go to `var/`. Any repo that wants
 dreams about itself sets `DREAMS_OUTPUT_PATH` to its own root and gets a
 versionable single file.
+
+## Oracle layer (astrology + tarot)
+
+REM optionally folds a small "Oracle" block into the reflection: a
+kerykeion-derived sky snapshot plus a deterministic single-card tarot pull
+seeded on `(user_id, UTC date)`. The model is instructed to treat it as
+*tone*, never to fabricate memory content to match the omen.
+
+Three astrology modes, picked automatically from the natal record's
+precision:
+
+- **`mundane`** (`precision: datetime`) — current sky only. Used when no
+  natal date is on file.
+- **`transit_partial`** (`precision: date`) — date-only natal: a chart is
+  drawn with a noon-UTC stand-in, and slow-planet aspects (Sun, Mercury
+  through Pluto) to natal are kept. Moon, Mean/True Node, Ascendant,
+  Midheaven, and house-cusp aspects are dropped because they require an
+  accurate birth time and location. The oracle block surfaces caveats and
+  the YAML frontmatter records `astro_precision: date`.
+- **`transit`** (`precision: datetime`) — full natal datetime + location;
+  all aspects within 3° orb are eligible.
+
+The dreaming sweep upgrades the precision tier whenever it can: a `none →
+date` or `date → datetime` jump from a memory probe is auto-saved and
+logged as `oracle.natal_recovered`. Anything below `datetime` also emits
+a stream-log event naming the missing fields and the exact
+`sacred-brain-oracle set` command to upgrade:
+
+- `oracle.natal_missing` — no date on file; mundane fallback used.
+- `oracle.natal_partial` — partial transit chart was drawn; lists the
+  fields still missing (`hour`, `minute`, `tz_str`, `lat`/`lng`, …) so
+  the operator sees exactly what would sharpen tonight's chart even
+  though one was already produced.
+
+**Auto-recovery from memory.** When the dreaming sweep runs and there is
+no natal file for the user (or it is incomplete), it probes long-term
+memory with queries like `"born"`, `"birthday"`, `"birth time"`,
+`"birthplace"`, and parses any hits for date/time/place. If the probe
+returns a complete date (year/month/day) it auto-saves the merged record;
+otherwise it appends an `oracle.natal_missing` event to the stream log
+(included in the next REM data block) listing exactly which fields are
+missing and what command will fill them. A successful auto-recovery emits
+`oracle.natal_recovered` with the source memory ids.
+
+You can run the same probe manually:
+
+```bash
+scripts/sacred-brain-oracle discover sam            # report only
+scripts/sacred-brain-oracle discover sam --save     # save if complete
+```
+
+Manage natal details with `scripts/sacred-brain-oracle`:
+
+```bash
+scripts/sacred-brain-oracle show sam
+scripts/sacred-brain-oracle set sam --date 1990-06-15 --time 14:32 \
+    --city Portland --nation US --lat 45.52 --lng -122.68 \
+    --tz America/Los_Angeles
+scripts/sacred-brain-oracle preview sam     # dry-run snapshot
+scripts/sacred-brain-oracle rm sam
+```
+
+Storage: `<state_dir>/oracle/natal/<user_id>.json`. Disable globally with
+`MG_ORACLE_ENABLED=0`. The astrology call is wrapped in try/except — a
+broken kerykeion install never blocks the sweep.
 
 ## Relation to `/consolidate`
 

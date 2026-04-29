@@ -27,6 +27,15 @@ from memory_governor.dream import (
     score_memories,
     write_dream_entry,
 )
+from memory_governor.oracle import (
+    build_oracle_snapshot,
+    discover_natal_from_memory,
+    load_natal,
+    natal_is_complete,
+    natal_precision,
+    save_natal,
+)
+from memory_governor.store import StreamLog
 from memory_governor.rem import (
     build_rem_messages,
     call_haiku_reflection,
@@ -35,6 +44,92 @@ from memory_governor.rem import (
 )
 from memory_governor.schemas import ScoreThresholds
 from memory_governor.store import WorkingStore
+
+
+async def _ensure_natal_or_alert(user_id: str, cfg, hippo) -> None:
+    """If no natal data on file, search memory for it. If still missing, log an
+    alert to the stream so it surfaces in tonight's REM data block.
+
+    Auto-saves only when discovery returns a complete date (year/month/day).
+    Partial finds (e.g. time but no date) are also logged so the operator can
+    fill the rest in via `sacred-brain-oracle set`.
+    """
+    existing = load_natal(cfg.state_dir, user_id)
+    existing_prec = natal_precision(existing)
+    # Skip the probe only when we already have full datetime+location.
+    if existing_prec == "datetime":
+        return
+
+    try:
+        found, sources = await discover_natal_from_memory(user_id, hippo)
+    except Exception as exc:  # noqa: BLE001
+        found, sources = {}, []
+        print(f"REM: natal memory probe failed: {exc}", file=sys.stderr)
+
+    stream = StreamLog(cfg.stream_log_path, ttl_days=cfg.stream_ttl_days)
+
+    # Merge any new fields the probe found into whatever exists.
+    merged = dict(existing or {})
+    for k, v in found.items():
+        merged.setdefault(k, v)
+    if found:
+        merged.setdefault("name", user_id)
+
+    new_prec = natal_precision(merged)
+
+    # Save if we improved the tier (none → date/datetime, or date → datetime).
+    if new_prec != "none" and new_prec != existing_prec:
+        save_natal(cfg.state_dir, user_id, merged)
+        stream.append({
+            "kind": "oracle.natal_recovered",
+            "user_id": user_id,
+            "precision": new_prec,
+            "fields": sorted(found.keys()),
+            "sources": sources,
+            "text": (
+                f"natal data auto-recovered for {user_id} from memory "
+                f"(precision={new_prec})"
+            ),
+        })
+        print(f"REM: natal recovered for {user_id} "
+              f"(precision={new_prec}, new_fields={sorted(found.keys())})",
+              file=sys.stderr)
+
+    # Alert when the tier is still below "datetime" so the operator knows
+    # what would sharpen tonight's chart.
+    if new_prec == "datetime":
+        return
+
+    if new_prec == "none":
+        kind = "oracle.natal_missing"
+        missing = ["year", "month", "day", "hour", "minute", "city", "tz_str"]
+        msg = (
+            f"oracle: no natal date on file for {user_id}; using mundane sky. "
+            f"Run `scripts/sacred-brain-oracle set {user_id} --date YYYY-MM-DD …` "
+            "to enable a transit chart."
+        )
+    else:  # "date" — partial chart drawn; Moon/Asc/houses dropped
+        kind = "oracle.natal_partial"
+        wanted = ("hour", "minute", "city", "tz_str", "lat", "lng")
+        missing = [k for k in wanted if k not in merged]
+        msg = (
+            f"oracle: partial transit chart drawn for {user_id} (date-only); "
+            f"missing {', '.join(missing)}. Moon, Nodes, Ascendant, MC, and "
+            f"house-cusp aspects are excluded tonight. "
+            f"Run `scripts/sacred-brain-oracle set {user_id} …` with "
+            "--time / --lat/--lng / --tz to upgrade."
+        )
+
+    stream.append({
+        "kind": kind,
+        "user_id": user_id,
+        "precision": new_prec,
+        "have": sorted(merged.keys()),
+        "missing": missing,
+        "partial_found": found,
+        "text": msg,
+    })
+    print(f"REM: {msg}", file=sys.stderr)
 
 
 async def _run(args: argparse.Namespace) -> int:
@@ -72,7 +167,20 @@ async def _run(args: argparse.Namespace) -> int:
             print("REM: no inputs (empty stream + no promotions + no recalls); skipping.",
                   file=sys.stderr)
         else:
-            messages = build_rem_messages(inputs)
+            if cfg.oracle_enabled:
+                await _ensure_natal_or_alert(args.user_id, cfg, hippo)
+            oracle = build_oracle_snapshot(
+                args.user_id,
+                cfg.state_dir,
+                enabled=cfg.oracle_enabled,
+                now_ts=inputs.now_ts or None,
+            )
+            if oracle:
+                astro_mode = (oracle.get("astro") or {}).get("mode", "?")
+                tarot_card = (oracle.get("tarot") or {}).get("card", "?")
+                print(f"REM: oracle astro={astro_mode} tarot={tarot_card}",
+                      file=sys.stderr)
+            messages = build_rem_messages(inputs, oracle=oracle)
             try:
                 reflection = call_haiku_reflection(
                     messages,
@@ -82,7 +190,7 @@ async def _run(args: argparse.Namespace) -> int:
             except Exception as exc:
                 print(f"REM: reflection call failed: {exc}", file=sys.stderr)
                 return 2
-            entry = format_dream_entry(reflection, inputs)
+            entry = format_dream_entry(reflection, inputs, oracle=oracle)
             base = resolve_dreams_output_path()
             written = write_dream_entry(base, entry)
             print(f"REM: wrote {written}", file=sys.stderr)
