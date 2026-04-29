@@ -1,0 +1,236 @@
+#!/opt/sacred-brain/.venv/bin/python
+"""Audit the dreaming oracle layer on real runtime data.
+
+Read-only. Reports:
+  1. Whether kerykeion is importable in this venv.
+  2. astro_mode / astro_precision tally across the last N nights of dreams.
+  3. Counts of oracle.natal_* events per user in the stream log.
+  4. Stored natal record for each user seen.
+  5. Tarot determinism sanity check.
+
+Usage:
+    scripts/oracle-audit                    # last 14 nights
+    scripts/oracle-audit --days 30
+    scripts/oracle-audit --json
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+import time
+from collections import Counter, defaultdict
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from memory_governor.config import load_config
+from memory_governor.oracle import draw_tarot, load_natal, natal_precision
+
+
+def _check_kerykeion() -> dict:
+    try:
+        import kerykeion  # noqa: F401
+        return {"installed": True, "version": getattr(kerykeion, "__version__", "?")}
+    except ImportError as exc:
+        return {"installed": False, "error": str(exc)}
+
+
+def _parse_frontmatter(md_text: str) -> dict:
+    if not md_text.startswith("---"):
+        return {}
+    end = md_text.find("\n---", 3)
+    if end < 0:
+        return {}
+    out: dict = {}
+    for line in md_text[3:end].splitlines():
+        if ":" not in line:
+            continue
+        k, _, v = line.partition(":")
+        out[k.strip()] = v.strip()
+    return out
+
+
+def _audit_dreams(dreams_dir: Path, days: int) -> dict:
+    if not dreams_dir.exists():
+        return {"dir": str(dreams_dir), "exists": False}
+    cutoff = time.time() - days * 86400
+    mode_tally: Counter = Counter()
+    precision_tally: Counter = Counter()
+    unavailable_nights: list[str] = []
+    tarot_cards: list[str] = []
+    total = 0
+    for p in sorted(dreams_dir.glob("*.md")):
+        if p.stat().st_mtime < cutoff:
+            continue
+        fm = _parse_frontmatter(p.read_text(encoding="utf-8"))
+        if not fm.get("date"):
+            continue
+        total += 1
+        mode = fm.get("astro_mode", "unset")
+        prec = fm.get("astro_precision", "unset")
+        mode_tally[mode] += 1
+        precision_tally[prec] += 1
+        if mode == "unavailable":
+            unavailable_nights.append(fm.get("date", p.stem))
+        if fm.get("tarot_card"):
+            tarot_cards.append(fm["tarot_card"])
+    return {
+        "dir": str(dreams_dir),
+        "exists": True,
+        "nights_examined": total,
+        "astro_mode": dict(mode_tally),
+        "astro_precision": dict(precision_tally),
+        "unavailable_nights": unavailable_nights,
+        "tarot_cards": tarot_cards,
+    }
+
+
+def _audit_stream(stream_path: Path, days: int) -> dict:
+    if not stream_path.exists():
+        return {"path": str(stream_path), "exists": False}
+    cutoff = int(time.time() - days * 86400)
+    per_kind_per_user: dict[str, Counter] = defaultdict(Counter)
+    partial_streaks: dict[str, int] = defaultdict(int)
+    users_seen: set[str] = set()
+    total_oracle_events = 0
+    for line in stream_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if int(rec.get("timestamp", 0)) < cutoff:
+            continue
+        kind = rec.get("kind", "")
+        if not kind.startswith("oracle."):
+            continue
+        total_oracle_events += 1
+        user = rec.get("user_id", "?")
+        users_seen.add(user)
+        per_kind_per_user[user][kind] += 1
+        if kind == "oracle.natal_partial":
+            partial_streaks[user] += 1
+    return {
+        "path": str(stream_path),
+        "exists": True,
+        "total_oracle_events": total_oracle_events,
+        "users": sorted(users_seen),
+        "counts_per_user": {u: dict(c) for u, c in per_kind_per_user.items()},
+        "partial_streaks": dict(partial_streaks),
+    }
+
+
+def _audit_natal(state_dir: Path, users: list[str]) -> dict:
+    out: dict = {}
+    for u in users:
+        data = load_natal(state_dir, u)
+        out[u] = {
+            "present": data is not None,
+            "precision": natal_precision(data),
+            "fields": sorted(data.keys()) if data else [],
+        }
+    return out
+
+
+def _audit_tarot_determinism() -> dict:
+    fixed_ts = 1762041600  # 2025-11-02 UTC midnight
+    a = draw_tarot("sam", now_ts=fixed_ts)
+    b = draw_tarot("sam", now_ts=fixed_ts)
+    c = draw_tarot("david", now_ts=fixed_ts)
+    return {
+        "same_user_same_day_matches": a == b,
+        "different_users_differ": a != c,
+        "sam": a,
+        "david": c,
+    }
+
+
+def _print_human(report: dict) -> None:
+    print("== Sacred Brain Oracle Audit ==\n")
+    k = report["kerykeion"]
+    if k["installed"]:
+        print(f"kerykeion: installed (v{k['version']})")
+    else:
+        print(f"kerykeion: NOT INSTALLED — {k['error']}")
+        print("  → astro snapshots will be silently degrading to mode=unavailable.")
+    print()
+
+    d = report["dreams"]
+    if not d.get("exists"):
+        print(f"dreams: (no dir at {d['dir']})")
+    else:
+        print(f"dreams: {d['nights_examined']} nights under {d['dir']}")
+        print(f"  astro_mode:      {d['astro_mode']}")
+        print(f"  astro_precision: {d['astro_precision']}")
+        if d["unavailable_nights"]:
+            print(f"  ⚠ astro unavailable on: {', '.join(d['unavailable_nights'])}")
+        if d["tarot_cards"]:
+            uniq = len(set(d["tarot_cards"]))
+            print(f"  tarot: {len(d['tarot_cards'])} draws, {uniq} unique cards")
+    print()
+
+    s = report["stream"]
+    if not s.get("exists"):
+        print(f"stream: (no file at {s['path']})")
+    else:
+        print(f"stream: {s['total_oracle_events']} oracle.* events")
+        for u, counts in s["counts_per_user"].items():
+            print(f"  {u}: {counts}")
+        for u, streak in s["partial_streaks"].items():
+            if streak >= 14:
+                print(f"  ⚠ {u} has been natal_partial for {streak} nights — "
+                      "consider filling in missing fields "
+                      f"(`scripts/sacred-brain-oracle show {u}` to see gaps).")
+    print()
+
+    print("natal records:")
+    for u, info in report["natal"].items():
+        if not info["present"]:
+            print(f"  {u}: (none on file)")
+        else:
+            print(f"  {u}: precision={info['precision']} fields={info['fields']}")
+    print()
+
+    t = report["tarot"]
+    ok = t["same_user_same_day_matches"] and t["different_users_differ"]
+    label = "OK" if ok else "FAIL"
+    print(f"tarot determinism: {label}")
+    print(f"  sam:   {t['sam']}")
+    print(f"  david: {t['david']}")
+
+
+def main() -> int:
+    p = argparse.ArgumentParser(description="Audit dreaming oracle layer")
+    p.add_argument("--days", type=int, default=14)
+    p.add_argument("--json", action="store_true")
+    p.add_argument("--dreams-dir", type=Path,
+                   default=Path("/opt/sacred-brain/var/dreams"))
+    args = p.parse_args()
+
+    cfg = load_config()
+    stream_audit = _audit_stream(cfg.stream_log_path, args.days)
+    users = stream_audit.get("users") or []
+
+    report = {
+        "generated_at": time.strftime("%Y-%m-%d %H:%M:%S %Z"),
+        "days_window": args.days,
+        "kerykeion": _check_kerykeion(),
+        "dreams": _audit_dreams(args.dreams_dir, args.days),
+        "stream": stream_audit,
+        "natal": _audit_natal(cfg.state_dir, users),
+        "tarot": _audit_tarot_determinism(),
+    }
+
+    if args.json:
+        print(json.dumps(report, indent=2, sort_keys=True))
+    else:
+        _print_human(report)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
