@@ -26,7 +26,15 @@ cp ops/config/memory-governor.env.example ops/config/memory-governor.env.local
 # 3. Run the installer
 sudo ./scripts/install.sh
 
-# 4. Verify
+# 4. Edit /etc/sacred-brain/*.env and hippocampus.toml (replace CHANGE_ME values)
+sudoedit /etc/sacred-brain/hippocampus.toml
+sudoedit /etc/sacred-brain/hippocampus.env
+sudoedit /etc/sacred-brain/memory-governor.env
+
+# 5. Start the services (the installer skips this on a fresh install while CHANGE_ME values are present)
+sudo ./scripts/install.sh --update
+
+# 6. Verify
 just health
 just timers
 ```
@@ -38,10 +46,10 @@ just timers
 | 1. User | Creates `sacred` system user (nologin shell) |
 | 2. Directories | Creates `/var/lib/sacred-brain/{hippocampus,governor,cache}` and `/etc/sacred-brain/` |
 | 3. Config | Copies `.example` templates to `/etc/sacred-brain/` (skips if files already exist) |
-| 4. Venv | Creates Python venv and installs dependencies |
-| 5. Systemd | Copies unit files from `ops/systemd/` to `/etc/systemd/system/` |
-| 6. Enable | Enables all services and timers |
-| 7. Start | Starts Hippocampus, Governor, and all timers |
+| 4. Venv | Creates Python venv (owned by `sacred`) and installs dependencies |
+| 5. Systemd | Copies all unit files from `ops/systemd/` to `/etc/systemd/system/` |
+| 6. Enable | Enables every unit that has an `[Install]` section |
+| 7. Start | Starts services + timers — **skipped on fresh install if any config still contains `CHANGE_ME`**; re-run with `--update` after editing |
 | 8. Verify | Health checks both services |
 
 ## Updating
@@ -57,6 +65,16 @@ just update-units
 
 # Or manually:
 sudo ./scripts/install.sh --update
+```
+
+## Uninstalling
+
+```bash
+# Stop, disable, and remove all systemd units (keeps configs and state)
+sudo ./scripts/install.sh --uninstall
+
+# Also remove /etc/sacred-brain, /var/lib/sacred-brain, and the 'sacred' user
+sudo ./scripts/install.sh --uninstall --purge
 ```
 
 ## Directory Layout
