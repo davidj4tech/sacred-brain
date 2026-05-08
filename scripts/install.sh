@@ -2,15 +2,19 @@
 set -euo pipefail
 
 # Sacred Brain installer
-# Clone the repo, edit the config templates, then run this script.
+# Clone the repo, run this, edit /etc/sacred-brain/*, then re-run with --update.
 #
 # Usage:
-#   sudo ./scripts/install.sh          # full install
-#   sudo ./scripts/install.sh --update # update systemd units only (no user/dir/config creation)
+#   sudo ./scripts/install.sh             # full install (won't start until configs are edited)
+#   sudo ./scripts/install.sh --update    # refresh units + restart services
+#   sudo ./scripts/install.sh --uninstall # stop + disable + remove units (keeps state by default)
+#   sudo ./scripts/install.sh --uninstall --purge  # also remove /etc and /var/lib state
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SYSTEMD_DIR="$REPO_DIR/ops/systemd"
 CONFIG_DIR="$REPO_DIR/ops/config"
+ETC_DIR="/etc/sacred-brain"
+STATE_DIR="/var/lib/sacred-brain"
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -18,20 +22,74 @@ info()  { echo "  [+] $*"; }
 warn()  { echo "  [!] $*" >&2; }
 die()   { echo "  [ERROR] $*" >&2; exit 1; }
 
+# List unit files available in the repo (basenames). Every unit in
+# ops/systemd/ is expected to have an [Install] section; if one doesn't,
+# `systemctl enable` skips it (which is fine for compose-style units that
+# are pulled in by another unit's Wants=).
+list_units() {
+    local f
+    for f in "$SYSTEMD_DIR"/*.service "$SYSTEMD_DIR"/*.timer; do
+        [[ -e "$f" ]] && basename "$f"
+    done
+}
+
+# True if /etc/sacred-brain/*.env or *.toml still contains CHANGE_ME placeholders.
+configs_have_placeholders() {
+    [[ -d "$ETC_DIR" ]] || return 1
+    grep -rlE 'CHANGE[_-]ME' "$ETC_DIR" >/dev/null 2>&1
+}
+
+# ── Argument parsing ────────────────────────────────────────────────
+
+MODE=install
+PURGE=false
+for arg in "$@"; do
+    case "$arg" in
+        --update)    MODE=update ;;
+        --uninstall) MODE=uninstall ;;
+        --purge)     PURGE=true ;;
+        -h|--help)
+            sed -n '4,11p' "$0"
+            exit 0
+            ;;
+        *) die "Unknown argument: $arg" ;;
+    esac
+done
+
 # ── Pre-flight checks ───────────────────────────────────────────────
 
 [[ $EUID -eq 0 ]] || die "Must run as root (sudo)"
 [[ -d "$SYSTEMD_DIR" ]] || die "ops/systemd/ not found — run from repo root"
 
-UPDATE_ONLY=false
-if [[ "${1:-}" == "--update" ]]; then
-    UPDATE_ONLY=true
-    info "Update mode: refreshing systemd units only"
+# ── Uninstall ───────────────────────────────────────────────────────
+
+if [[ "$MODE" == "uninstall" ]]; then
+    info "Stopping and disabling units"
+    for unit in $(list_units); do
+        if [[ -f "/etc/systemd/system/$unit" ]]; then
+            systemctl disable --now "$unit" || true
+            rm -f "/etc/systemd/system/$unit"
+        fi
+    done
+    systemctl daemon-reload
+
+    if $PURGE; then
+        info "Removing $ETC_DIR and $STATE_DIR"
+        rm -rf "$ETC_DIR" "$STATE_DIR"
+        if id sacred &>/dev/null; then
+            info "Removing service user 'sacred'"
+            userdel sacred || warn "Could not remove user 'sacred'"
+        fi
+    else
+        info "Kept $ETC_DIR and $STATE_DIR (use --purge to remove)"
+    fi
+    info "Uninstall complete."
+    exit 0
 fi
 
 # ── Phase 1: Service user ───────────────────────────────────────────
 
-if [[ "$UPDATE_ONLY" == false ]]; then
+if [[ "$MODE" == "install" ]]; then
     if id sacred &>/dev/null; then
         info "User 'sacred' already exists"
     else
@@ -42,41 +100,36 @@ fi
 
 # ── Phase 2: FHS directories ────────────────────────────────────────
 
-if [[ "$UPDATE_ONLY" == false ]]; then
+if [[ "$MODE" == "install" ]]; then
     info "Creating state directories"
-    mkdir -p /var/lib/sacred-brain/hippocampus
-    mkdir -p /var/lib/sacred-brain/governor
-    mkdir -p /var/lib/sacred-brain/cache
-    chown -R sacred:sacred /var/lib/sacred-brain
+    mkdir -p "$STATE_DIR"/{hippocampus,governor,cache}
+    chown -R sacred:sacred "$STATE_DIR"
 
     info "Creating config directory"
-    mkdir -p /etc/sacred-brain
-    chown sacred:sacred /etc/sacred-brain
+    mkdir -p "$ETC_DIR"
+    chown sacred:sacred "$ETC_DIR"
 fi
 
 # ── Phase 3: Configuration ──────────────────────────────────────────
 
-if [[ "$UPDATE_ONLY" == false ]]; then
-    for tmpl in hippocampus.toml.example hippocampus.env.example memory-governor.env.example; do
-        target="/etc/sacred-brain/${tmpl%.example}"
+if [[ "$MODE" == "install" ]]; then
+    for tmpl in "$CONFIG_DIR"/*.example; do
+        [[ -e "$tmpl" ]] || continue
+        target="$ETC_DIR/$(basename "${tmpl%.example}")"
         if [[ -f "$target" ]]; then
             info "Config exists, skipping: $target"
         else
-            if [[ -f "$CONFIG_DIR/$tmpl" ]]; then
-                cp "$CONFIG_DIR/$tmpl" "$target"
-                chown sacred:sacred "$target"
-                chmod 640 "$target"
-                warn "Created $target from template — edit CHANGE_ME values!"
-            else
-                warn "Template not found: $CONFIG_DIR/$tmpl"
-            fi
+            cp "$tmpl" "$target"
+            chown sacred:sacred "$target"
+            chmod 640 "$target"
+            warn "Created $target from template — edit CHANGE_ME values!"
         fi
     done
 fi
 
 # ── Phase 4: Python venv ────────────────────────────────────────────
 
-if [[ "$UPDATE_ONLY" == false ]]; then
+if [[ "$MODE" == "install" ]]; then
     if [[ ! -d "$REPO_DIR/.venv" ]]; then
         info "Creating Python venv"
         python3 -m venv "$REPO_DIR/.venv"
@@ -84,96 +137,67 @@ if [[ "$UPDATE_ONLY" == false ]]; then
     fi
 
     if [[ -f "$REPO_DIR/pyproject.toml" ]]; then
-        info "Installing Python dependencies"
-        "$REPO_DIR/.venv/bin/pip" install -e "$REPO_DIR" 2>/dev/null \
-            || "$REPO_DIR/.venv/bin/pip" install -r "$REPO_DIR/requirements.txt" 2>/dev/null \
-            || warn "No installable package or requirements.txt found — install deps manually"
+        info "Installing Python package (editable)"
+        "$REPO_DIR/.venv/bin/pip" install -e "$REPO_DIR"
+    elif [[ -f "$REPO_DIR/requirements.txt" ]]; then
+        info "Installing Python dependencies from requirements.txt"
+        "$REPO_DIR/.venv/bin/pip" install -r "$REPO_DIR/requirements.txt"
+    else
+        warn "No pyproject.toml or requirements.txt — skipping Python deps"
     fi
 fi
 
 # ── Phase 5: Systemd units ──────────────────────────────────────────
 
-# Core services and timers (always installed)
-CORE_UNITS=(
-    hippocampus.service
-    hippocampus-auto-prune.service
-    hippocampus-auto-prune.timer
-    hippocampus-auto-tune.service
-    hippocampus-auto-tune.timer
-    hippocampus-notes-export.service
-    hippocampus-notes-export.timer
-    hippocampus-notes-import.service
-    hippocampus-notes-import.timer
-    memory-governor.service
-    memory-governor-consolidate.service
-    memory-governor-consolidate.timer
-)
-
-# Optional units (only installed if present in ops/systemd/)
-OPTIONAL_UNITS=(
-    governor-digest.service
-    governor-digest.timer
-    hippocampus-memory-sync.service
-    hippocampus-memory-sync.timer
-)
-
 info "Installing systemd units"
-for unit in "${CORE_UNITS[@]}" "${OPTIONAL_UNITS[@]}"; do
-    src="$SYSTEMD_DIR/$unit"
-    if [[ -f "$src" ]]; then
-        cp "$src" "/etc/systemd/system/$unit"
-        info "  $unit"
-    fi
+installed_units=()
+for unit in $(list_units); do
+    cp "$SYSTEMD_DIR/$unit" "/etc/systemd/system/$unit"
+    info "  $unit"
+    installed_units+=("$unit")
 done
 
 systemctl daemon-reload
 
-# ── Phase 6: Enable services and timers ──────────────────────────────
+# ── Phase 6: Enable units ───────────────────────────────────────────
 
-info "Enabling core services"
-systemctl enable hippocampus.service memory-governor.service 2>/dev/null
-
-info "Enabling timers"
-for timer in hippocampus-auto-prune.timer hippocampus-auto-tune.timer \
-             hippocampus-notes-export.timer hippocampus-notes-import.timer \
-             memory-governor-consolidate.timer; do
-    systemctl enable "$timer" 2>/dev/null
-done
-
-# Enable optional timers if their unit files exist
-for timer in governor-digest.timer hippocampus-memory-sync.timer; do
-    if [[ -f "/etc/systemd/system/$timer" ]]; then
-        systemctl enable "$timer" 2>/dev/null
-        info "  (optional) $timer"
+info "Enabling units"
+# `systemctl enable` errors on units without [Install]; skip those quietly.
+for unit in "${installed_units[@]}"; do
+    if grep -q '^\[Install\]' "$SYSTEMD_DIR/$unit"; then
+        systemctl enable "$unit"
     fi
 done
 
 # ── Phase 7: Start ──────────────────────────────────────────────────
 
-if [[ "$UPDATE_ONLY" == false ]]; then
+start_all() {
     info "Starting services"
-    systemctl start hippocampus.service
-    sleep 2
-    systemctl start memory-governor.service
-    sleep 2
-
-    info "Starting timers"
-    systemctl start hippocampus-auto-prune.timer
-    systemctl start hippocampus-auto-tune.timer
-    systemctl start hippocampus-notes-export.timer
-    systemctl start hippocampus-notes-import.timer
-    systemctl start memory-governor-consolidate.timer
-
-    for timer in governor-digest.timer hippocampus-memory-sync.timer; do
-        if [[ -f "/etc/systemd/system/$timer" ]]; then
-            systemctl start "$timer"
-        fi
+    for unit in "${installed_units[@]}"; do
+        [[ "$unit" == *.service ]] || continue
+        systemctl start "$unit" || warn "Failed to start $unit"
     done
-else
+    info "Starting timers"
+    for unit in "${installed_units[@]}"; do
+        [[ "$unit" == *.timer ]] || continue
+        systemctl start "$unit" || warn "Failed to start $unit"
+    done
+}
+
+if [[ "$MODE" == "install" ]]; then
+    if configs_have_placeholders; then
+        warn "Configs in $ETC_DIR still contain CHANGE_ME placeholders."
+        warn "Skipping service start. Edit them, then run:"
+        warn "  sudo $0 --update"
+        exit 0
+    fi
+    start_all
+elif [[ "$MODE" == "update" ]]; then
     info "Restarting services"
-    systemctl restart hippocampus.service
-    sleep 2
-    systemctl restart memory-governor.service
+    for unit in "${installed_units[@]}"; do
+        [[ "$unit" == *.service ]] || continue
+        systemctl restart "$unit" || warn "Failed to restart $unit"
+    done
 fi
 
 # ── Phase 8: Verify ─────────────────────────────────────────────────
@@ -205,13 +229,9 @@ if $hippo_ok && $gov_ok; then
     echo ""
     echo "  Hippocampus:  http://127.0.0.1:54321"
     echo "  Governor:     http://127.0.0.1:54323"
-    echo "  Config:       /etc/sacred-brain/"
-    echo "  State:        /var/lib/sacred-brain/"
+    echo "  Config:       $ETC_DIR/"
+    echo "  State:        $STATE_DIR/"
     echo "  Ops:          cd $REPO_DIR && just --list"
-    echo ""
-    if [[ "$UPDATE_ONLY" == false ]]; then
-        warn "Remember to edit CHANGE_ME values in /etc/sacred-brain/*.env and hippocampus.toml!"
-    fi
 else
     warn "Some services failed to start. Check: journalctl -u hippocampus -u memory-governor"
 fi
