@@ -1,3 +1,12 @@
+# Unreleased
+
+## Installer
+- `scripts/install.sh` now skips starting services on a fresh install when `/etc/sacred-brain/*` still contains `CHANGE_ME` placeholders. Edit configs, then run `sudo ./scripts/install.sh --update` to start.
+- Systemd units are discovered by globbing `ops/systemd/` instead of being listed in the script. New units added to the repo are picked up automatically.
+- Added `--uninstall` (removes units, keeps state) and `--uninstall --purge` (also removes `/etc/sacred-brain`, `/var/lib/sacred-brain`, and the `sacred` user).
+- Python venv is now `chown`'d to `sacred:sacred` so post-install pip operations from `just` recipes or hooks work without sudo.
+- Added a `shellcheck` GitHub Actions workflow for `scripts/`.
+
 # v0.3.0 (2026-02-15)
 
 ## Restructuring

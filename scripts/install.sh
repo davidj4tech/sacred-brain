@@ -145,6 +145,10 @@ if [[ "$MODE" == "install" ]]; then
     else
         warn "No pyproject.toml or requirements.txt — skipping Python deps"
     fi
+
+    # Services run as 'sacred', so the venv must be owned by 'sacred' for any
+    # post-install pip operations (just recipes, hooks) to work without sudo.
+    chown -R sacred:sacred "$REPO_DIR/.venv"
 fi
 
 # ── Phase 5: Systemd units ──────────────────────────────────────────
