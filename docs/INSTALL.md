@@ -4,7 +4,8 @@
 
 - Linux with systemd (Debian/Ubuntu/Raspberry Pi OS)
 - Python 3.11+
-- `curl` (for health checks and consolidation)
+- `pipx` (`sudo apt install pipx`)
+- `make`, `curl`
 - `just` (optional, for ops recipes): `sudo apt install just`
 - A LiteLLM-compatible gateway on port 4000 (optional, for LLM features)
 
@@ -12,45 +13,43 @@
 
 ```bash
 # 1. Clone the repo
-git clone git@github.com:davidj4tech/sacred-brain.git /opt/sacred-brain
+sudo git clone https://github.com/davidj4tech/sacred-brain.git /opt/sacred-brain
 cd /opt/sacred-brain
 
-# 2. Copy and edit config templates
-cp ops/config/hippocampus.toml.example ops/config/hippocampus.toml.local
-cp ops/config/hippocampus.env.example ops/config/hippocampus.env.local
-cp ops/config/memory-governor.env.example ops/config/memory-governor.env.local
+# 2. Install
+sudo make install
 
-# Edit each file — replace CHANGE_ME values with real API keys
-# The installer will copy these to /etc/sacred-brain/ if no config exists yet
-
-# 3. Run the installer
-sudo ./scripts/install.sh
-
-# 4. Edit /etc/sacred-brain/*.env and hippocampus.toml (replace CHANGE_ME values)
+# 3. Edit /etc/sacred-brain/* — replace CHANGE_ME values
 sudoedit /etc/sacred-brain/hippocampus.toml
 sudoedit /etc/sacred-brain/hippocampus.env
 sudoedit /etc/sacred-brain/memory-governor.env
 
-# 5. Start the services (the installer skips this on a fresh install while CHANGE_ME values are present)
-sudo ./scripts/install.sh --update
+# 4. Start the services
+sudo systemctl start hippocampus memory-governor
 
-# 6. Verify
+# 5. Verify
 just health
 just timers
 ```
 
-## What the Installer Does
+The repo lives at `/opt/sacred-brain/` because the timer-target scripts
+(in `scripts/`) run from there. The Python services themselves run from a
+pipx-managed venv at `/opt/pipx/venvs/sacred-brain-hippocampus/`, with
+`hippocampus` and `memory-governor` symlinked into `/usr/local/bin/`.
 
-| Phase | Action |
-|-------|--------|
-| 1. User | Creates `sacred` system user (nologin shell) |
-| 2. Directories | Creates `/var/lib/sacred-brain/{hippocampus,governor,cache}` and `/etc/sacred-brain/` |
-| 3. Config | Copies `.example` templates to `/etc/sacred-brain/` (skips if files already exist) |
-| 4. Venv | Creates Python venv (owned by `sacred`) and installs dependencies |
-| 5. Systemd | Copies all unit files from `ops/systemd/` to `/etc/systemd/system/` |
-| 6. Enable | Enables every unit that has an `[Install]` section |
-| 7. Start | Starts services + timers — **skipped on fresh install if any config still contains `CHANGE_ME`**; re-run with `--update` after editing |
-| 8. Verify | Health checks both services |
+## What `make install` Does
+
+| Target | Action |
+|--------|--------|
+| `install-deps` | Creates `sacred` system user (nologin) and `/var/lib/sacred-brain/{hippocampus,governor,cache}` and `/etc/sacred-brain/` |
+| `migrate-legacy` | Removes any old `/opt/sacred-brain/.venv/` from a pre-pipx install (idempotent) |
+| `install-package` | `pipx install --force .` into `/opt/pipx/venvs/sacred-brain-hippocampus/`, with `hippocampus` and `memory-governor` symlinks in `$(PREFIX)/bin/` |
+| `install-bin` | Installs `sacred-search` to `$(PREFIX)/bin/sacred-search` |
+| `install-systemd` | Copies all unit files from `ops/systemd/` to `/etc/systemd/system/`, runs `daemon-reload`, enables every unit with an `[Install]` section |
+| `install-config` | Copies `.example` templates to `/etc/sacred-brain/` (skips files that already exist) |
+
+`make install` does **not** start services automatically — the operator
+edits `CHANGE_ME` values, then runs `systemctl start` manually.
 
 ## Updating
 
@@ -58,34 +57,54 @@ After pulling new code:
 
 ```bash
 cd /opt/sacred-brain
-git pull
-
-# Update systemd units only (doesn't touch config or recreate dirs)
-just update-units
-
-# Or manually:
-sudo ./scripts/install.sh --update
+sudo git pull
+sudo make install-update
 ```
+
+`install-update` reinstalls the Python package, refreshes systemd unit
+files, runs `daemon-reload`, and restarts any enabled services.
 
 ## Uninstalling
 
 ```bash
-# Stop, disable, and remove all systemd units (keeps configs and state)
-sudo ./scripts/install.sh --uninstall
+# Stop, disable, and remove all systemd units; uninstall the pipx package;
+# remove sacred-search from $(PREFIX)/bin. Keeps configs and state.
+sudo make uninstall
 
 # Also remove /etc/sacred-brain, /var/lib/sacred-brain, and the 'sacred' user
-sudo ./scripts/install.sh --uninstall --purge
+sudo make uninstall-purge
 ```
+
+## Compatibility shim
+
+`scripts/install.sh` still exists as a thin wrapper that delegates to the
+Makefile, so `sudo ./scripts/install.sh [--update|--uninstall|--uninstall --purge]`
+continues to work for existing automation.
+
+## Customization
+
+The Makefile honors standard variables for non-default installs and packagers:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `PREFIX` | `/usr/local` | Where `hippocampus`, `memory-governor`, `sacred-search` live |
+| `SYSCONFDIR` | `/etc` | Parent of `sacred-brain/` config dir |
+| `DESTDIR` | (empty) | Stage all paths under this prefix (skips `systemctl` calls) |
+| `PIPX_HOME` | `/opt/pipx` | Where pipx puts the package's venv |
 
 ## Directory Layout
 
 ```
-/opt/sacred-brain/              ← repo (code, scripts, ops)
-/etc/sacred-brain/              ← configuration (not in repo)
-    hippocampus.toml            ← Hippocampus app config
-    hippocampus.env             ← Hippocampus environment vars
-    memory-governor.env         ← Governor environment vars
-/var/lib/sacred-brain/          ← state (not in repo)
+/opt/sacred-brain/                        ← repo clone (timer scripts run from here)
+/opt/pipx/venvs/sacred-brain-hippocampus/ ← installed Python package (services run from here)
+/usr/local/bin/hippocampus
+/usr/local/bin/memory-governor
+/usr/local/bin/sacred-search
+/etc/sacred-brain/                        ← configuration (not in repo)
+    hippocampus.toml
+    hippocampus.env
+    memory-governor.env
+/var/lib/sacred-brain/                    ← state (not in repo)
     hippocampus/
         hippocampus_memories.sqlite
         memories-denote/
@@ -125,6 +144,7 @@ Core settings: auth keys, Mem0 backend, Agno model, notes directory. See `ops/co
 ### Hippocampus Environment (`hippocampus.env`)
 
 SAM pipeline settings (LLM gateway URL, model alias, timeout) and the Hippocampus API key.
+Optional: `HIPPOCAMPUS_HOST` (default `0.0.0.0`) and `HIPPOCAMPUS_PORT` (default `54321`).
 
 ### Governor Environment (`memory-governor.env`)
 
@@ -152,7 +172,7 @@ All services run with:
 - `ProtectHome=true`
 - `PrivateTmp=true`
 - `ReadWritePaths` limited to `/var/lib/sacred-brain`
-- `ReadOnlyPaths` for code and config
+- `ReadOnlyPaths` for code (`/opt/pipx`, plus `/opt/sacred-brain` for timer scripts) and config (`/etc/sacred-brain`)
 
 Check security scores: `just security-audit`
 

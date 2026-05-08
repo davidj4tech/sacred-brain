@@ -8,7 +8,7 @@ WorkingDirectory=/opt/sacred-brain
 User=sacred
 Group=sacred
 Environment=PYTHONPATH=/opt/sacred-brain
-ExecStart=/opt/sacred-brain/.venv/bin/python scripts/mem0_org_sync.py export --dir /var/lib/sacred-brain/hippocampus/memories-denote
+ExecStart=/opt/pipx/venvs/sacred-brain-hippocampus/bin/python scripts/mem0_org_sync.py export --dir /var/lib/sacred-brain/hippocampus/memories-denote
 
 # Hardening
 NoNewPrivileges=true
@@ -16,7 +16,7 @@ ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
 ReadWritePaths=/var/lib/sacred-brain
-ReadOnlyPaths=/opt/sacred-brain
+ReadOnlyPaths=/opt/sacred-brain /opt/pipx
 ProtectKernelTunables=true
 ProtectKernelModules=true
 

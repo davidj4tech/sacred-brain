@@ -10,7 +10,7 @@ EnvironmentFile=/etc/sacred-brain/hippocampus.env
 Environment=MEMORY_SYNC_ROOT=/opt/sam
 Environment=HIPPOCAMPUS_USER_ID=sam
 Environment=HIPPOCAMPUS_SQLITE_PATH=/var/lib/sacred-brain/hippocampus/hippocampus_memories.sqlite
-ExecStart=/opt/sacred-brain/.venv/bin/python /opt/sacred-brain/scripts/memory_sync.py push
+ExecStart=/opt/pipx/venvs/sacred-brain-hippocampus/bin/python /opt/sacred-brain/scripts/memory_sync.py push
 
 # Hardening
 NoNewPrivileges=true
@@ -18,7 +18,7 @@ ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
 ReadWritePaths=/var/lib/sacred-brain
-ReadOnlyPaths=/opt/sacred-brain /opt/sam /etc/sacred-brain
+ReadOnlyPaths=/opt/sacred-brain /opt/pipx /opt/sam /etc/sacred-brain
 ProtectKernelTunables=true
 ProtectKernelModules=true
 
