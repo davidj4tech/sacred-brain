@@ -20,8 +20,16 @@ dependencies = [
   "kerykeion>=4.11",
 ]
 
-[tool.setuptools]
-packages = ["memory_governor"]
+[project.scripts]
+hippocampus = "brain.hippocampus.__main__:main"
+memory-governor = "memory_governor.app:run"
+
+[tool.setuptools.packages.find]
+include = ["brain*", "memory_governor*", "sacred_brain*"]
+namespaces = true
+
+[tool.setuptools.package-data]
+"sacred_brain.prompts" = ["*.txt"]
 
 [project.optional-dependencies]
 dev = [

@@ -9,7 +9,7 @@ User=sacred
 Group=sacred
 Environment=HIPPOCAMPUS_SQLITE_PATH=/var/lib/sacred-brain/hippocampus/hippocampus_memories.sqlite
 Environment=AUTO_TUNE_PATH=/var/lib/sacred-brain/auto_memory_tuning.json
-ExecStart=/opt/sacred-brain/.venv/bin/python scripts/auto_memory_tuner.py
+ExecStart=/opt/pipx/venvs/sacred-brain-hippocampus/bin/python scripts/auto_memory_tuner.py
 
 # Hardening
 NoNewPrivileges=true
@@ -17,7 +17,7 @@ ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
 ReadWritePaths=/var/lib/sacred-brain
-ReadOnlyPaths=/opt/sacred-brain
+ReadOnlyPaths=/opt/sacred-brain /opt/pipx
 ProtectKernelTunables=true
 ProtectKernelModules=true
 

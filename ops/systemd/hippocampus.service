@@ -4,9 +4,8 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/sacred-brain
 EnvironmentFile=/etc/sacred-brain/hippocampus.env
-ExecStart=/opt/sacred-brain/.venv/bin/uvicorn brain.hippocampus.app:app --host 0.0.0.0 --port 54321
+ExecStart=/usr/local/bin/hippocampus
 Restart=on-failure
 User=sacred
 Group=sacred
@@ -17,7 +16,7 @@ ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
 ReadWritePaths=/var/lib/sacred-brain
-ReadOnlyPaths=/opt/sacred-brain /etc/sacred-brain
+ReadOnlyPaths=/opt/pipx /etc/sacred-brain
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
